@@ -1,124 +1,224 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40bindparam.t 8518 2007-01-06 20:48:33Z capttofu $ 
+#
+#   This is a skeleton test. For writing new tests, take this file
+#   and modify/extend it.
+#
 
-use DBI;
-use Test::More;
-use lib 't', '.';
-require 'lib.pl';
-use vars qw($test_dsn $test_user $test_password);
+$^W = 1;
 
-my $dbh;
-eval {$dbh= DBI->connect($test_dsn, $test_user, $test_password,
-                      { RaiseError => 1, PrintError => 1, AutoCommit => 1 });};
-if ($@) {
-    plan skip_all => "no database connection";
+
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+$sql_mode_feature=1;
+
+
+#
+#   Include lib.pl
+#
+use DBI ();
+use vars qw($COL_NULLABLE);
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
+}
+if ($mdriver eq 'pNET') {
+    print "1..0\n";
+    exit 0;
 }
 
-if (!MinimumVersion($dbh, '4.1')) {
-    plan skip_all => "ERROR: $DBI::errstr. Can't continue test";
-    plan skip_all =>
-        "SKIP TEST: You must have MySQL version 4.1 and greater for this test to run";
+sub ServerError() {
+    my $err = $DBI::errstr;  # Hate -w ...
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
 }
 
-plan tests => 41;
+if (!defined(&SQL_VARCHAR)) {
+    eval "sub SQL_VARCHAR { 12 }";
+}
+if (!defined(&SQL_INTEGER)) {
+    eval "sub SQL_INTEGER { 4 }";
+}
+$dbh = DBI->connect($test_dsn, $test_user, $test_password,
+  { RaiseError => 1, AutoCommit => 1}) or ServerError() ;
 
-ok ($dbh->do("DROP TABLE IF EXISTS dbd_mysql_t40bindparam"));
+$sth= $dbh->prepare("select version()") or
+  DbiError($dbh->err, $dbh->errstr);
 
-my $create = <<EOT;
-CREATE TABLE dbd_mysql_t40bindparam (
-        id int(4) NOT NULL default 0,
-        name varchar(64) default ''
-        )
-EOT
+$sth->execute() or 
+  DbiError($dbh->err, $dbh->errstr);
 
-ok ($dbh->do($create));
+$row= $sth->fetchrow_arrayref() or
+  DbiError($dbh->err, $dbh->errstr);
 
-ok (my $sth = $dbh->prepare("INSERT INTO dbd_mysql_t40bindparam VALUES (?, ?)"));
+# 
+# DROP/CREATE PROCEDURE will give syntax error 
+# for these versions
+#
+if ($row->[0] =~ /^4\.0/ || $row->[0] =~ /^3/)
+{
+  $sql_mode_feature= 0;
+}
 
-# Automatic type detection
-my $numericVal = 1;
-my $charVal = "Alligator Descartes";
-ok ($sth->execute($numericVal, $charVal));
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or ($dbh = DBI->connect($test_dsn, $test_user,
+					$test_password, {mysql_enable_utf8 => 1})))
+	   or ServerError();
 
-# Does the driver remember the automatically detected type?
-ok ($sth->execute("3", "Jochen Wiedmann"));
+    #
+    #   Find a possible new table name
+    #
+    Test($state or $table = FindNewTable($dbh))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-$numericVal = 2;
-$charVal = "Tim Bunce";
-ok ($sth->execute($numericVal, $charVal));
+    #
+    #   Create a new table; EDIT THIS!
+    #
+    Test($state or ($def = TableDefinition($table,
+					   ["id",   "INTEGER",  4, 0],
+					   ["name", "CHAR",    64, $COL_NULLABLE]),
+		    $dbh->do($def)))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-# Now try the explicit type settings
-ok ($sth->bind_param(1, " 4", SQL_INTEGER()));
 
-# umlaut equivelant is vowel followed by 'e'
-ok ($sth->bind_param(2, 'Andreas Koenig'));
-ok ($sth->execute);
 
-# Works undef -> NULL?
-ok ($sth->bind_param(1, 5, SQL_INTEGER()));
+    Test($state or $sth = $dbh->prepare("INSERT INTO $table"
+	                                   . " VALUES (?, ?)"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->bind_param(2, undef));
+    #
+    #   Insert some rows
+    #
 
-ok ($sth->execute);
+    # Automatic type detection
+    my $numericVal = 1;
+    my $charVal = "Alligator Descartes";
+    Test($state or $sth->execute($numericVal, $charVal))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->bind_param(1, undef, SQL_INTEGER()));
+    # Does the driver remember the automatically detected type?
+    Test($state or $sth->execute("3", "Jochen Wiedmann"))
+	   or DbiError($dbh->err, $dbh->errstr);
+    $numericVal = 2;
+    $charVal = "Tim Bunce";
+    Test($state or $sth->execute($numericVal, $charVal))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->bind_param(2, undef));
+    # Now try the explicit type settings
+    Test($state or $sth->bind_param(1, " 4", SQL_INTEGER()))
+	or DbiError($dbh->err, $dbh->errstr);
+    # umlaut equivelant is vowel followed by 'e'
+    Test($state or $sth->bind_param(2, 'Andreas Koenig'))
+	or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $sth->execute)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->execute(-1, "abc"));
+    # Works undef -> NULL?
+    Test($state or $sth->bind_param(1, 5, SQL_INTEGER()))
+	or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $sth->bind_param(2, undef))
+	or DbiError($dbh->err, $dbh->errstr);
 
-ok ($dbh->do("INSERT INTO dbd_mysql_t40bindparam VALUES (6, '?')"));
+    Test($state or $sth->execute)
+ 	or DbiError($dbh->err, $dbh->errstr);
 
-ok ($dbh->do('SET @old_sql_mode = @@sql_mode, @@sql_mode = \'\''));
+    # Test binding negative numbers [rt.cpan.org #18976]
+    Test($state or $sth->bind_param(1, undef, SQL_INTEGER()))
+      or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $sth->bind_param(2, undef))
+      or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $sth->execute(-1, "abc"))
+      or DbiError($dbh->err, $dbh->errstr);
 
-ok ($dbh->do("INSERT INTO dbd_mysql_t40bindparam VALUES (7, \"?\")"));
+    Test($state or undef $sth  ||  1);
 
-ok ($dbh->do('SET @@sql_mode = @old_sql_mode'));
+    #
+    #   Try various mixes of question marks, single and double quotes
+    #
+    Test($state or $dbh->do("INSERT INTO $table VALUES (6, '?')"))
+	   or DbiError($dbh->err, $dbh->errstr);
+    if ($mdriver eq 'mysql' or $mdriver eq 'mysqlEmb') {
+        ($state or ! $sql_mode_feature) or $dbh->do('SET @old_sql_mode = @@sql_mode, @@sql_mode = \'\'');
+	Test(($state or !$sql_mode_feature) or ($sql_mode_feature and $dbh->do("INSERT INTO $table VALUES (7, \"?\")")))
+	    or DbiError($dbh->err, $dbh->errstr);
+        ($state or ! $sql_mode_feature)  or ($sql_mode_feature and $dbh->do('SET @@sql_mode = @old_sql_mode'));
+    }
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40bindparam ORDER BY id"));
+    #
+    #   And now retreive the rows using bind_columns
+    #
+    Test($state or $sth = $dbh->prepare("SELECT * FROM $table"
+					   . " ORDER BY id"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok($sth->execute);
+    Test($state or $sth->execute)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-my ($id, $name);
+    Test($state or $sth->bind_columns(undef, \$id, \$name))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->bind_columns(undef, \$id, \$name));
+    Test($state or (($ref = $sth->fetch)  &&  $id == -1  &&
+		   $name eq 'abc'))
+	or print("Query returned id = $id, name = $name, expected -1,abc\n");
 
-my $ref = $sth->fetch ;
+    Test($state or ($ref = $sth->fetch)  &&  $id == 1  &&
+	 $name eq 'Alligator Descartes')
+	or printf("Query returned id = %s, name = %s, ref = %s, %d\n",
+		  $id, $name, $ref, scalar(@$ref));
 
-is $id,  -1, 'id set to -1';
+    Test($state or (($ref = $sth->fetch)  &&  $id == 2  &&
+		    $name eq 'Tim Bunce'))
+	or printf("Query returned id = %s, name = %s, ref = %s, %d\n",
+		  $id, $name, $ref, scalar(@$ref));
 
-cmp_ok $name, 'eq', 'abc', 'name eq abc';
+    Test($state or (($ref = $sth->fetch)  &&  $id == 3  &&
+		    $name eq 'Jochen Wiedmann'))
+	or printf("Query returned id = %s, name = %s, ref = %s, %d\n",
+		  $id, $name, $ref, scalar(@$ref));
 
-$ref = $sth->fetch;
-is $id, 1, 'id set to 1';
-cmp_ok $name, 'eq', 'Alligator Descartes', '$name set to Alligator Descartes';
+    Test($state or (($ref = $sth->fetch)  &&  $id == 4  &&
+		    $name eq 'Andreas Koenig'))
+	or printf("Query returned id = %s, name = %s, ref = %s, %d\n",
+		  $id, $name, $ref, scalar(@$ref));
+    Test($state or (($ref = $sth->fetch)  &&  $id == 5  &&
+		    !defined($name)))
+	or printf("Query returned id = %s, name = %s, ref = %s, %d\n",
+		  $id, $name, $ref, scalar(@$ref));
 
-$ref = $sth->fetch;
-is $id, 2, 'id set to 2';
-cmp_ok $name, 'eq', 'Tim Bunce', '$name set to Tim Bunce';
+    Test($state or (($ref = $sth->fetch)  &&  $id == 6  &&
+		   $name eq '?'))
+	or print("Query returned id = $id, name = $name, expected 6,?\n");
 
-$ref = $sth->fetch;
-is $id, 3, 'id set to 3';
-cmp_ok $name, 'eq', 'Jochen Wiedmann', '$name set to Jochen Wiedmann';
+    Test(($state || !$sql_mode_feature) or (($ref = $sth->fetch)  &&  $id == 7  &&
+          $name eq '?'))
+      or print("Query returned id = $id, name = $name, expected 7,?\n");
+    #
+    #   Finally drop the test table.
+    #
+    Test($state or $dbh->do("DROP TABLE $table"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-$ref = $sth->fetch;
-is $id, 4, 'id set to 4';
-cmp_ok $name, 'eq', 'Andreas Koenig', '$name set to Andreas Koenig';
+    Test($state or undef $sth  or  1);
 
-$ref = $sth->fetch;
-is $id, 5, 'id set to 5';
-ok !defined($name), 'name not defined';
-
-$ref = $sth->fetch;
-is $id, 6, 'id set to 6';
-cmp_ok $name, 'eq', '?', "\$name set to '?'";
-
-$ref = $sth->fetch;
-is $id, 7, '$id set to 7';
-cmp_ok $name, 'eq', '?', "\$name set to '?'";
-
-ok ($dbh->do("DROP TABLE dbd_mysql_t40bindparam"));
-
-ok $sth->finish;
-
-ok $dbh->disconnect;
+}

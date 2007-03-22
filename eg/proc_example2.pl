@@ -1,8 +1,6 @@
 #!/usr/bin/perl
 
 use strict;
-use warnings;
-
 use DBI;
 use Data::Dumper;
 
@@ -45,7 +43,7 @@ $sth = $dbh->prepare('call users_proc()') ||
  $sth->execute || die DBI::err.": ".$DBI::errstr;
  do {
   print "\nResult set ".++$i."\n---------------------------------------\n\n";
-  for my $colno (0..$sth->{NUM_OF_FIELDS}-1) {
+  for my $colno (0..$sth->{NUM_OF_FIELDS}) {
     print $sth->{NAME}->[$colno]."\t";
   }
   print "\n";

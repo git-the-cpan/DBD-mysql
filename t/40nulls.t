@@ -1,45 +1,101 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40nulls.t 8435 2006-12-23 19:03:49Z capttofu $
+#
+#   This is a test for correctly handling NULL values.
+#
 
+
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+
+
+#
+#   Include lib.pl
+#
 use DBI;
-use Test::More;
-use vars qw($test_dsn $test_user $test_password);
-use lib 't', '.';
-require 'lib.pl';
+use vars qw($COL_NULLABLE);
 
-my ($dbh, $sth);
-eval {$dbh= DBI->connect($test_dsn, $test_user, $test_password,
-                      { RaiseError => 1, PrintError => 1, AutoCommit => 0 });};
-if ($@) {
-    plan skip_all =>
-        "no database connection";
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
 }
-plan tests => 10;
 
-ok $dbh->do("DROP TABLE IF EXISTS dbd_mysql_t40nulls"), "DROP TABLE IF EXISTS dbd_mysql_t40nulls";
+sub ServerError() {
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
+}
 
-my $create= <<EOT;
-CREATE TABLE dbd_mysql_t40nulls (
-  id INT(4),
-  name VARCHAR(64)
-  )
-EOT
-ok $dbh->do($create), "create table $create";
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
+	or ServerError();
 
-ok $dbh->do("INSERT INTO dbd_mysql_t40nulls VALUES ( NULL, 'NULL-valued id' )"), "inserting nulls";
+    #
+    #   Find a possible new table name
+    #
+    Test($state or $table = FindNewTable($dbh))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40nulls WHERE id IS NULL"));
+    #
+    #   Create a new table; EDIT THIS!
+    #
+    Test($state or ($def = TableDefinition($table,
+				   ["id",   "INTEGER",  4, $COL_NULLABLE],
+				   ["name", "CHAR",    64, 0]),
+		    $dbh->do($def)))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-do $sth->execute;
 
-ok (my $aref = $sth->fetchrow_arrayref);
+    #
+    #   Test whether or not a field containing a NULL is returned correctly
+    #   as undef, or something much more bizarre
+    #
+    Test($state or $dbh->do("INSERT INTO $table VALUES"
+	                    . " ( NULL, 'NULL-valued id' )"))
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok !defined($$aref[0]);
+    Test($state or $sth = $dbh->prepare("SELECT * FROM $table"
+	                                   . " WHERE " . IsNull("id")))
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok defined($$aref[1]);
+    Test($state or $sth->execute)
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->finish;
+    Test($state or ($rv = $sth->fetchrow_arrayref) or $dbdriver eq 'CSV')
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok $dbh->do("DROP TABLE dbd_mysql_t40nulls");
+    Test($state or (!defined($$rv[0])  and  defined($$rv[1])) or
+	 $dbdriver eq 'CSV')
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok $dbh->disconnect;
+    Test($state or $sth->finish)
+           or DbiError($dbh->err, $dbh->errstr);
+
+    #
+    #   Finally drop the test table.
+    #
+    Test($state or $dbh->do("DROP TABLE $table"))
+	   or DbiError($dbh->err, $dbh->errstr);
+
+    Test($state or undef $sth  ||  1);
+}

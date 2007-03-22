@@ -1,16 +1,4 @@
-\B\.git\b
+\B\.svn\b
 ^blib\/
-pm_to_blib
 \~$
 ^Makefile(\.old)?$
-.gitignore
-^DBD-mysql-\d
-\.bak$
-\.tmp$
-\.o$
-^MYMETA
-mysql.c
-mysql.xsi
-mysql.bs
-.mailmap
-.travis.yml

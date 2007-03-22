@@ -1,49 +1,118 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40bindparam.t 6304 2006-05-17 21:23:10Z capttofu $ 
+#
+#   This is a skeleton test. For writing new tests, take this file
+#   and modify/extend it.
+#
 
-use Test::More;
-use DBI;
-use vars qw($test_dsn $test_user $test_password);
-use lib 't', '.';
-require 'lib.pl';
+$^W = 1;
 
-my $dbh;
-eval {$dbh = DBI->connect($test_dsn, $test_user, $test_password,
-  { RaiseError => 1, AutoCommit => 1}) or ServerError();};
 
-if ($@) {
-    plan skip_all => "no database connection";
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+
+
+#
+#   Include lib.pl
+#
+use DBI ();
+use vars qw($COL_NULLABLE $rows);
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
 }
-plan tests => 13;
+if ($mdriver eq 'pNET') {
+    print "1..0\n";
+    exit 0;
+}
 
-ok $dbh->do('SET @@auto_increment_offset = 1');
-ok $dbh->do('SET @@auto_increment_increment = 1');
+sub ServerError() {
+    my $err = $DBI::errstr;  # Hate -w ...
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
+}
 
-my $create= <<EOT;
-CREATE TEMPORARY TABLE dbd_mysql_t40bindparam2 (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    num INT(3))
-EOT
+if (!defined(&SQL_VARCHAR)) {
+    eval "sub SQL_VARCHAR { 12 }";
+}
+if (!defined(&SQL_INTEGER)) {
+    eval "sub SQL_INTEGER { 4 }";
+}
 
-ok $dbh->do($create), "create table dbd_mysql_t40bindparam2";
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
+	or ServerError();
 
-ok $dbh->do("INSERT INTO dbd_mysql_t40bindparam2 VALUES(NULL, 1)"), "insert into dbd_mysql_t40bindparam2 (null, 1)";
+    Test($state or $table = FindNewTable($dbh))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-my $rows;
-ok ($rows= $dbh->selectall_arrayref("SELECT * FROM dbd_mysql_t40bindparam2"));
+    #
+    #   Create a new table; EDIT THIS!
+    #
+  Test($state or 
+    ($dbh->do("CREATE TABLE $table (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, num INT)")))
+      or DbiError($dbh->err, $dbh->errstr);
 
-is $rows->[0][1], 1, "\$rows->[0][1] == 1";
+  Test($state or ($dbh->do("INSERT INTO $table VALUES(NULL, 1)")))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok (my $sth = $dbh->prepare("UPDATE dbd_mysql_t40bindparam2 SET num = ? WHERE id = ?"));
+  Test($state or ($rows= $dbh->selectall_arrayref("SELECT * FROM $table")))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->bind_param(2, 1, SQL_INTEGER()));
+  Test($state or ($rows->[0][1] == 1)) 
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->execute());
+  Test($state or
+    ($sth = $dbh->prepare("UPDATE $table SET num = ? WHERE id = ?")))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->finish());
+  Test($state or ($sth->bind_param(2, 1, SQL_INTEGER())))
+    or DbiError($dbh->err, $dbh->errstr);
+  
+  Test($state or ($sth->execute()))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($rows = $dbh->selectall_arrayref("SELECT * FROM dbd_mysql_t40bindparam2"));
+  Test($state or
+    ($rows = $dbh->selectall_arrayref("SELECT * FROM $table")))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok !defined($rows->[0][1]);
+  #
+  # in this case, it should be NULL
+  #
+  Test($state or (! defined $rows->[0][1]))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($dbh->disconnect());
+  #
+  #   Finally drop the test table.
+  #
+  Test($state or $dbh->do("DROP TABLE $table"))
+    or DbiError($dbh->err, $dbh->errstr);
+
+  # 
+  # disconnect
+  #
+  Test($state or ($dbh->disconnect()))
+    or DbiError($dbh->err, $dbh->errstr);
+
+}

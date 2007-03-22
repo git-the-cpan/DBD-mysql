@@ -1,29 +1,36 @@
-use strict;
-use warnings;
+#!perl -w
+# vim: ft=perl
 
+use Data::Dumper;
 use Test::More;
 use DBI;
-use lib '.', 't';
-require 'lib.pl';
+use DBI::Const::GetInfoType;
+use strict;
 $|= 1;
 
-use vars qw($test_dsn $test_user $test_password);
+my $mdriver= "";
 
-my $dbh;
-eval {$dbh= DBI->connect($test_dsn, $test_user, $test_password,
-                      { RaiseError            => 1,
-                        PrintError            => 1,
-                        AutoCommit            => 1,
-                        mysql_server_prepare  => 0 });};
-
-if ($@) {
-    plan skip_all => "no database connection";
+our ($test_dsn, $test_user, $test_password);
+foreach my $file ("lib.pl", "t/lib.pl") {
+  do $file;
+  if ($@) {
+    print STDERR "Error while executing $file: $@\n";
+    exit 10;
+  }
+  last if $mdriver ne '';
 }
-plan tests => 78;
+
+my $dbh= DBI->connect($test_dsn, $test_user, $test_password,
+                      { RaiseError => 1, PrintError => 1, AutoCommit => 0 });
+
+plan tests => 77;
 
 ok(defined $dbh, "connecting");
 
 my $sth;
+
+my ($version)= $dbh->selectrow_array("SELECT version()")
+  or DbiError($dbh->err, $dbh->errstr);
 
 #
 # Bug #26604: foreign_key_info() implementation
@@ -32,29 +39,13 @@ my $sth;
 #
 SKIP: {
   skip "Server is too old to support INFORMATION_SCHEMA for foreign keys", 16
-    if !MinimumVersion($dbh, '5.0');
+    if substr($version, 0, 1) < 5;
 
-  my $have_innodb = 0;
-  if (!MinimumVersion($dbh, '5.6')) {
-    my $dummy;
-    ($dummy,$have_innodb)=
-      $dbh->selectrow_array("SHOW VARIABLES LIKE 'have_innodb'")
-      or DbiError($dbh->err, $dbh->errstr);
-  } else {
-    my $engines = $dbh->selectall_arrayref('SHOW ENGINES');
-    if (!$engines) {
-      DbiError($dbh->err, $dbh->errstr);
-    } else {
-       STORAGE_ENGINE:
-       for my $engine (@$engines) {
-         next STORAGE_ENGINE if lc $engine->[0] ne 'innodb';
-         next STORAGE_ENGINE if lc $engine->[1] eq 'no';
-         $have_innodb = 1;
-       }
-    }
-  }
+  my ($dummy,$have_innodb)=
+    $dbh->selectrow_array("SHOW VARIABLES LIKE 'have_innodb'")
+    or DbiError($dbh->err, $dbh->errstr);
   skip "Server doesn't support InnoDB, needed for testing foreign keys", 16
-    if !$have_innodb;
+    unless defined $have_innodb && $have_innodb eq "YES";
 
   ok($dbh->do(qq{DROP TABLE IF EXISTS child, parent}), "cleaning up");
 
@@ -65,7 +56,7 @@ SKIP: {
                                       REFERENCES parent(id) ON DELETE SET NULL)
               ENGINE=INNODB}));
 
-  $sth= $dbh->foreign_key_info(undef, undef, 'parent', undef, undef, 'child');
+  $sth= $dbh->foreign_key_info(undef, undef, "parent", undef, undef, "child");
   my ($info)= $sth->fetchall_arrayref({});
 
   is($info->[0]->{PKTABLE_NAME}, "parent");
@@ -73,7 +64,7 @@ SKIP: {
   is($info->[0]->{FKTABLE_NAME}, "child");
   is($info->[0]->{FKCOLUMN_NAME}, "parent_id");
 
-  $sth= $dbh->foreign_key_info(undef, undef, 'parent', undef, undef, undef);
+  $sth= $dbh->foreign_key_info(undef, undef, "parent", undef, undef, undef);
   ($info)= $sth->fetchall_arrayref({});
 
   is($info->[0]->{PKTABLE_NAME}, "parent");
@@ -81,7 +72,7 @@ SKIP: {
   is($info->[0]->{FKTABLE_NAME}, "child");
   is($info->[0]->{FKCOLUMN_NAME}, "parent_id");
 
-  $sth= $dbh->foreign_key_info(undef, undef, undef, undef, undef, 'child');
+  $sth= $dbh->foreign_key_info(undef, undef, undef, undef, undef, "child");
   ($info)= $sth->fetchall_arrayref({});
 
   is($info->[0]->{PKTABLE_NAME}, "parent");
@@ -100,7 +91,7 @@ SKIP: {
 #
 SKIP: {
   skip "Server can't handle tricky table names", 33
-    if !MinimumVersion($dbh, '4.1');
+    if $dbh->get_info($GetInfoType{SQL_DBMS_VER}) lt "4.1";
 
   my $sth = $dbh->table_info("%", undef, undef, undef);
   is(scalar @{$sth->fetchall_arrayref()}, 0, "No catalogs expected");
@@ -183,7 +174,7 @@ SKIP: {
   $info = $sth->fetchall_arrayref({});
 
   is(scalar @$info, 5, "five tables expected");
-
+  
   # Check that tables() finds and escapes the tables named with quotes
   $info = [ $dbh->tables(undef, undef, $base . 'a%') ];
   like($info->[0], qr/\.`t_dbd_mysql_a'b`$/, "table with single quote");
@@ -203,7 +194,7 @@ SKIP: {
 #
 SKIP: {
   skip "Server is too old to support views", 19
-  if !MinimumVersion($dbh, '5.0');
+    if substr($version, 0, 1) < 5;
 
   #
   # Bug #26603: (one part) support views in table_info()
@@ -290,13 +281,6 @@ SKIP: {
   $sth= $dbh->column_info(undef, undef, "t1", "a'b");
   ($info)= $sth->fetchall_arrayref({});
   is(scalar @$info, 1);
-
-  #
-  # The result set is ordered by TABLE_CAT, TABLE_SCHEM, TABLE_NAME and ORDINAL_POSITION.
-  #
-  $sth= $dbh->column_info(undef, undef, "t1", undef);
-  ($info)= $sth->fetchall_arrayref({});
-  is(join(' ++ ', map { $_->{COLUMN_NAME} } @{$info}), "a ++ b ++ a_ ++ a'b ++ bar");
 
   ok($dbh->do(qq{DROP TABLE IF EXISTS t1}), "cleaning up");
   $dbh->disconnect();

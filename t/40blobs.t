@@ -1,89 +1,146 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40blobs.t 8435 2006-12-23 19:03:49Z capttofu $
+#
+#   This is a test for correct handling of BLOBS; namely $dbh->quote
+#   is expected to work correctly.
+#
 
-use Test::More;
-use DBI;
-use vars qw($test_dsn $test_user $test_password);
-use lib '.', 't';
-require 'lib.pl';
 
-sub ShowBlob($) {
-    my ($blob) = @_;
-    my $b;
-    for (my $i = 0;  $i < 8;  $i++) {
-        if (defined($blob)  &&  length($blob) > $i) {
-            $b = substr($blob, $i*32);
-        }
-        else {
-            $b = "";
-        }
-        note sprintf("%08lx %s\n", $i*32, unpack("H64", $b));
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+
+
+#
+#   Include lib.pl
+#
+require DBI;
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
     }
 }
 
-my $dbh;
-my $charset= 'DEFAULT CHARSET=utf8';
-
-eval {$dbh = DBI->connect($test_dsn, $test_user, $test_password,
-  { RaiseError => 1, AutoCommit => 1}) or ServerError() ;};
-
-if ($@) {
-    plan skip_all => "no database connection";
-}
-else {
-    plan tests => 14;
+sub ServerError() {
+    my $err = $DBI::errstr; # Hate -w ...
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
 }
 
-if (!MinimumVersion($dbh, '4.1')) {
-    $charset= '';
+
+sub ShowBlob($) {
+    my ($blob) = @_;
+    for($i = 0;  $i < 8;  $i++) {
+	if (defined($blob)  &&  length($blob) > $i) {
+	    $b = substr($blob, $i*32);
+	} else {
+	    $b = "";
+	}
+	printf("%08lx %s\n", $i*32, unpack("H64", $b));
+    }
 }
 
-my $size= 128;
 
-ok $dbh->do("DROP TABLE IF EXISTS dbd_mysql_t40blobs"), "Drop table if exists dbd_mysql_t40blobs";
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
+	or ServerError();
 
-my $create = <<EOT;
-CREATE TABLE dbd_mysql_t40blobs (
-    id INT(3) NOT NULL DEFAULT 0,
-    name BLOB ) $charset
-EOT
+    #
+    #   Find a possible new table name
+    #
+    Test($state or $table = FindNewTable($dbh))
+	   or DbiError($dbh->error, $dbh->errstr);
 
-ok ($dbh->do($create));
+    my($def);
+    foreach $size (128) {
+	#
+	#   Create a new table
+	#
+	if (!$state) {
+	    $def = TableDefinition($table,
+				   ["id",   "INTEGER",      4, 0],
+				   ["name", "BLOB",     $size, 0]);
+	    print "Creating table:\n$def\n";
+	}
+	Test($state or $dbh->do($def))
+	    or DbiError($dbh->err, $dbh->errstr);
 
-my ($blob, $qblob) = "";
-my $b = "";
-for (my $j = 0;  $j < 256;  $j++) {
-    $b .= chr($j);
+
+	#
+	#  Create a blob
+	#
+	my ($blob, $qblob) = "";
+	if (!$state) {
+	    my $b = "";
+	    for ($j = 0;  $j < 256;  $j++) {
+		$b .= chr($j);
+	    }
+	    for ($i = 0;  $i < $size;  $i++) {
+		$blob .= $b;
+	    }
+            $qblob = $dbh->quote($blob);
+	}
+
+	#
+	#   Insert a row into the test table.......
+	#
+	my($query);
+	if (!$state) {
+	    $query = "INSERT INTO $table VALUES(1, $qblob)";
+	    if ($ENV{'SHOW_BLOBS'}  &&  open(OUT, ">" . $ENV{'SHOW_BLOBS'})) {
+		print OUT $query;
+		close(OUT);
+	    }
+	}
+        Test($state or $dbh->do($query))
+	    or DbiError($dbh->err, $dbh->errstr);
+
+	#
+	#   Now, try SELECT'ing the row out.
+	#
+	Test($state or $sth = $dbh->prepare("SELECT * FROM $table"
+					       . " WHERE id = 1"))
+	       or DbiError($dbh->err, $dbh->errstr);
+
+	Test($state or $sth->execute)
+	       or DbiError($dbh->err, $dbh->errstr);
+
+	Test($state or (defined($row = $sth->fetchrow_arrayref)))
+	    or DbiError($sth->err, $sth->errstr);
+
+	Test($state or (@$row == 2  &&  $$row[0] == 1  &&  $$row[1] eq $blob))
+	    or (ShowBlob($blob),
+		ShowBlob(defined($$row[1]) ? $$row[1] : ""));
+
+	Test($state or $sth->finish)
+	    or DbiError($sth->err, $sth->errstr);
+
+	Test($state or undef $sth || 1)
+	    or DbiError($sth->err, $sth->errstr);
+
+	#
+	#   Finally drop the test table.
+	#
+	Test($state or $dbh->do("DROP TABLE $table"))
+	    or DbiError($dbh->err, $dbh->errstr);
+    }
 }
-for (1 .. $size) {
-    $blob .= $b;
-}
-ok ($qblob = $dbh->quote($blob));
-
-#   Insert a row into the test table.......
-my ($query);
-$query = "INSERT INTO dbd_mysql_t40blobs VALUES(1, $qblob)";
-ok ($dbh->do($query));
-
-#   Now, try SELECT'ing the row out.
-ok (my $sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40blobs WHERE id = 1"));
-
-ok ($sth->execute);
-
-ok (my $row = $sth->fetchrow_arrayref);
-
-ok defined($row), "row returned defined";
-
-is @$row, 2, "records from dbd_mysql_t40blobs returned 2";
-
-is $$row[0], 1, 'id set to 1';
-
-cmp_ok byte_string($$row[1]), 'eq', byte_string($blob), 'blob set equal to blob returned';
-
-ShowBlob($blob), ShowBlob(defined($$row[1]) ? $$row[1] : "");
-
-ok ($sth->finish);
-
-ok $dbh->do("DROP TABLE dbd_mysql_t40blobs"), "Drop table dbd_mysql_t40blobs";
-
-ok $dbh->disconnect;

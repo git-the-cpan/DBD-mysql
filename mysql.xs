@@ -1,5 +1,7 @@
 /* Hej, Emacs, this is -*- C -*- mode!
 
+   $Id: mysql.xs 9183 2007-03-01 15:47:39Z capttofu $
+
    Copyright (c) 2003      Rudolf Lippan
    Copyright (c) 1997-2003 Jochen Wiedmann
 
@@ -11,19 +13,6 @@
 
 #include "dbdimp.h"
 #include "constants.h"
-
-#include <errno.h>
-#include <string.h>
-
-#if MYSQL_ASYNC
-#  define ASYNC_CHECK_XS(h)\
-    if(imp_dbh->async_query_in_flight) {\
-        do_error(h, 2000, "Calling a synchronous function on an asynchronous handle", "HY000");\
-        XSRETURN_UNDEF;\
-    }
-#else
-#  define ASYNC_CHECK_XS(h)
-#endif
 
 
 DBISTATE_DECLARE;
@@ -102,7 +91,7 @@ _admin_internal(drh,dbh,command,dbname=NULL,host=NULL,port=NULL,user=NULL,passwo
  */
   if (SvOK(dbh)) {
     D_imp_dbh(dbh);
-    sock = imp_dbh->pmysql;
+    sock = &imp_dbh->mysql;
   }
   else
   {
@@ -201,7 +190,6 @@ type_info_all(dbh)
   /* 	} */
   /* 	ST(0) = sv_2mortal(newRV_inc((SV*) types)); */
   D_imp_dbh(dbh);
-  ASYNC_CHECK_XS(dbh);
   ST(0) = sv_2mortal(newRV_noinc((SV*) dbd_db_type_info_all(dbh,
                                                             imp_dbh)));
   XSRETURN(1);
@@ -212,20 +200,15 @@ void
 _ListDBs(dbh)
   SV*	dbh
   PPCODE:
-  MYSQL_RES* res;
-  MYSQL_ROW cur;
-
   D_imp_dbh(dbh);
-
-  ASYNC_CHECK_XS(dbh);
-
-  res = mysql_list_dbs(imp_dbh->pmysql, NULL);
+  MYSQL_RES* res = mysql_list_dbs(&imp_dbh->mysql, NULL);
+  MYSQL_ROW cur;
   if (!res  &&
       (!mysql_db_reconnect(dbh)  ||
-       !(res = mysql_list_dbs(imp_dbh->pmysql, NULL))))
+       !(res = mysql_list_dbs(&imp_dbh->mysql, NULL))))
 {
-  do_error(dbh, mysql_errno(imp_dbh->pmysql),
-           mysql_error(imp_dbh->pmysql), mysql_sqlstate(imp_dbh->pmysql));
+  do_error(dbh, mysql_errno(&imp_dbh->mysql),
+           mysql_error(&imp_dbh->mysql), mysql_sqlstate(&imp_dbh->mysql));
 }
 else
 {
@@ -251,10 +234,6 @@ do(dbh, statement, attr=Nullsv, ...)
   int retval;
   struct imp_sth_ph_st* params= NULL;
   MYSQL_RES* result= NULL;
-  SV* async = NULL;
-#if MYSQL_VERSION_ID >= MULTIPLE_RESULT_SET_VERSION
-  int next_result_rc;
-#endif
 #if MYSQL_VERSION_ID >= SERVER_PREPARE_VERSION
   STRLEN slen;
   char            *str_ptr, *statement_ptr, *buffer;
@@ -268,17 +247,6 @@ do(dbh, statement, attr=Nullsv, ...)
   MYSQL_STMT      *stmt= NULL;
   MYSQL_BIND      *bind= NULL;
   imp_sth_phb_t   *fbind= NULL;
-#endif
-    ASYNC_CHECK_XS(dbh);
-#if MYSQL_VERSION_ID >= MULTIPLE_RESULT_SET_VERSION
-    while (mysql_next_result(imp_dbh->pmysql)==0)
-    {
-      MYSQL_RES* res = mysql_use_result(imp_dbh->pmysql);
-      if (res)
-        mysql_free_result(res);
-      }
-#endif
-#if MYSQL_VERSION_ID >= SERVER_PREPARE_VERSION
 
   /*
    * Globaly enabled using of server side prepared statement
@@ -291,48 +259,30 @@ do(dbh, statement, attr=Nullsv, ...)
   use_server_side_prepare = imp_dbh->use_server_side_prepare;
   if (attr)
   {
-    SV** svp;
+    SV **svp;
     DBD_ATTRIBS_CHECK("do", dbh, attr);
     svp = DBD_ATTRIB_GET_SVP(attr, "mysql_server_prepare", 20);
 
     use_server_side_prepare = (svp) ?
       SvTRUE(*svp) : imp_dbh->use_server_side_prepare;
-
-    svp   = DBD_ATTRIB_GET_SVP(attr, "async", 5);
-    async = (svp) ? *svp : &PL_sv_no;
   }
-  if (DBIc_DBISTATE(imp_dbh)->debug >= 2)
-    PerlIO_printf(DBIc_LOGPIO(imp_dbh),
-                  "mysql.xs do() use_server_side_prepare %d, async %d\n",
-                  use_server_side_prepare, SvTRUE(async));
+  if (dbis->debug >= 2)
+    PerlIO_printf(DBILOGFP,
+                  "mysql.xs do() use_server_side_prepare %d\n",
+                  use_server_side_prepare);
 
   hv_store((HV*)SvRV(dbh), "Statement", 9, SvREFCNT_inc(statement), 0);
-
-  if(SvTRUE(async)) {
-#if MYSQL_ASYNC
-    use_server_side_prepare = FALSE; /* for now */
-    imp_dbh->async_query_in_flight = imp_dbh;
-#else
-    do_error(dbh, 2000,
-             "Async support was not built into this version of DBD::mysql", "HY000");
-    XSRETURN_UNDEF;
-#endif
-  }
 
   if (use_server_side_prepare)
   {
     str_ptr= SvPV(statement, slen);
 
-    stmt= mysql_stmt_init(imp_dbh->pmysql);
+    stmt= mysql_stmt_init(&imp_dbh->mysql);
 
-    if ((mysql_stmt_prepare(stmt, str_ptr, strlen(str_ptr)))  &&
-        (!mysql_db_reconnect(dbh) ||
-         (mysql_stmt_prepare(stmt, str_ptr, strlen(str_ptr)))))
+    if (mysql_stmt_prepare(stmt, str_ptr, strlen(str_ptr)))
     {
-      /*
-        For commands that are not supported by server side prepared
-        statement mechanism lets try to pass them through regular API
-      */
+      /* For commands that are not supported by server side prepared statement
+         mechanism lets try to pass them through regular API */
       if (mysql_stmt_errno(stmt) == ER_UNSUPPORTED_PS)
       {
         use_server_side_prepare= 0;
@@ -349,8 +299,8 @@ do(dbh, statement, attr=Nullsv, ...)
     else
     {
       /*
-        'items' is the number of arguments passed to XSUB, supplied
-        by xsubpp compiler, as listed in manpage for perlxs
+        * 'items' is the number of arguments passed to XSUB, supplied by xsubpp
+        * compiler, as listed in manpage for perlxs
       */
       if (items > 3)
       {
@@ -391,10 +341,10 @@ do(dbh, statement, attr=Nullsv, ...)
           }
 
           /*
-            if this statement has a result set, field types will be
-            correctly identified. If there is no result set, such as
-            with an INSERT, fields will not be defined, and all
-            buffer_type will default to MYSQL_TYPE_VAR_STRING
+            if this statement has a result set, field types will be correctly
+            identified. If there is no result set, such as with an INSERT,
+            fields will not be defined, and all buffer_type will default to
+            MYSQL_TYPE_VAR_STRING
           */
           col_type= (stmt->fields) ? stmt->fields[i].type : MYSQL_TYPE_STRING;
 
@@ -530,7 +480,7 @@ do(dbh, statement, attr=Nullsv, ...)
       }
     }
     retval = mysql_st_internal_execute(dbh, statement, attr, num_params,
-                                       params, &result, imp_dbh->pmysql, 0);
+                                       params, &result, &imp_dbh->mysql, 0);
 #if MYSQL_VERSION_ID >=SERVER_PREPARE_VERSION
   }
 #endif
@@ -542,30 +492,6 @@ do(dbh, statement, attr=Nullsv, ...)
     mysql_free_result(result);
     result= 0;
   }
-#if MYSQL_VERSION_ID >= MULTIPLE_RESULT_SET_VERSION
-  if (retval != -2 && !SvTRUE(async)) /* -2 means error */
-    {
-      /* more results? -1 = no, >0 = error, 0 = yes (keep looping) */
-      while ((next_result_rc= mysql_next_result(imp_dbh->pmysql)) == 0)
-      {
-        result = mysql_use_result(imp_dbh->pmysql);
-          if (result)
-            mysql_free_result(result);
-          }
-          if (next_result_rc > 0)
-          {
-            if (DBIc_DBISTATE(imp_dbh)->debug >= 2)
-              PerlIO_printf(DBIc_LOGPIO(imp_dbh),
-                            "\t<- do() ERROR: %s\n",
-                            mysql_error(imp_dbh->pmysql));
-
-              do_error(dbh, mysql_errno(imp_dbh->pmysql),
-                       mysql_error(imp_dbh->pmysql),
-                       mysql_sqlstate(imp_dbh->pmysql));
-              retval= -2;
-          }
-    }
-#endif
   /* remember that dbd_st_execute must return <= -2 for error	*/
   if (retval == 0)		/* ok with no rows affected	*/
     XST_mPV(0, "0E0");	/* (true but zero)		*/
@@ -583,13 +509,11 @@ ping(dbh)
   CODE:
     {
       int retval;
-
       D_imp_dbh(dbh);
-      ASYNC_CHECK_XS(dbh);
-      retval = (mysql_ping(imp_dbh->pmysql) == 0);
+      retval = (mysql_ping(&imp_dbh->mysql) == 0);
       if (!retval) {
 	if (mysql_db_reconnect(dbh)) {
-	  retval = (mysql_ping(imp_dbh->pmysql) == 0);
+	  retval = (mysql_ping(&imp_dbh->mysql) == 0);
 	}
       }
       RETVAL = boolSV(retval);
@@ -607,77 +531,11 @@ quote(dbh, str, type=NULL)
   PROTOTYPE: $$;$
   PPCODE:
     {
-        SV* quoted;
-
-        D_imp_dbh(dbh);
-        ASYNC_CHECK_XS(dbh);
-
-        quoted = dbd_db_quote(dbh, str, type);
+        SV* quoted = dbd_db_quote(dbh, str, type);
 	ST(0) = quoted ? sv_2mortal(quoted) : str;
 	XSRETURN(1);
     }
 
-int mysql_fd(dbh)
-    SV* dbh
-  CODE:
-    {
-        D_imp_dbh(dbh);
-        RETVAL = imp_dbh->pmysql->net.fd;
-    }
-  OUTPUT:
-    RETVAL
-
-void mysql_async_result(dbh)
-    SV* dbh
-  PPCODE:
-    {
-#if MYSQL_ASYNC
-        int retval;
-
-        retval = mysql_db_async_result(dbh, NULL);
-
-        if(retval > 0) {
-            XSRETURN_IV(retval);
-        } else if(retval == 0) {
-            XSRETURN_PV("0E0");
-        } else {
-            XSRETURN_UNDEF;
-        }
-#else
-        do_error(dbh, 2000, "Async support was not built into this version of DBD::mysql", "HY000");
-        XSRETURN_UNDEF;
-#endif
-    }
-
-void mysql_async_ready(dbh)
-    SV* dbh
-  PPCODE:
-    {
-#if MYSQL_ASYNC
-        int retval;
-
-        retval = mysql_db_async_ready(dbh);
-        if(retval > 0) {
-            XSRETURN_YES;
-        } else if(retval == 0) {
-            XSRETURN_NO;
-        } else {
-            XSRETURN_UNDEF;
-        }
-#else
-        do_error(dbh, 2000, "Async support was not built into this version of DBD::mysql", "HY000");
-        XSRETURN_UNDEF;
-#endif
-    }
-
-void _async_check(dbh)
-    SV* dbh
-  PPCODE:
-    {
-        D_imp_dbh(dbh);
-        ASYNC_CHECK_XS(dbh);
-        XSRETURN_YES;
-    }
 
 MODULE = DBD::mysql    PACKAGE = DBD::mysql::st
 
@@ -756,15 +614,6 @@ rows(sth)
   CODE:
     D_imp_sth(sth);
     char buf[64];
-#if MYSQL_ASYNC
-    D_imp_dbh_from_sth;
-    if(imp_dbh->async_query_in_flight) {
-        if(mysql_db_async_result(sth, &imp_sth->result) < 0) {
-            XSRETURN_UNDEF;
-        }
-    }
-#endif
-
   /* fix to make rows able to handle errors and handle max value from 
      affected rows.
      if mysql_affected_row returns an error, it's value is 18446744073709551614,
@@ -778,65 +627,6 @@ rows(sth)
 
   ST(0) = sv_2mortal(newSVpvn(buf, strlen(buf)));
 
-int mysql_async_result(sth)
-    SV* sth
-  CODE:
-    {
-#if MYSQL_ASYNC
-        D_imp_sth(sth);
-        int retval;
-
-        retval= mysql_db_async_result(sth, &imp_sth->result);
-
-        if(retval > 0) {
-            imp_sth->row_num = retval;
-            XSRETURN_IV(retval);
-        } else if(retval == 0) {
-            imp_sth->row_num = retval;
-            XSRETURN_PV("0E0");
-        } else {
-            XSRETURN_UNDEF;
-        }
-#else
-        do_error(sth, 2000,
-                 "Async support was not built into this version of DBD::mysql", "HY000");
-        XSRETURN_UNDEF;
-#endif
-    }
-  OUTPUT:
-    RETVAL
-
-void mysql_async_ready(sth)
-    SV* sth
-  PPCODE:
-    {
-#if MYSQL_ASYNC
-        int retval;
-
-        retval = mysql_db_async_ready(sth);
-        if(retval > 0) {
-            XSRETURN_YES;
-        } else if(retval == 0) {
-            XSRETURN_NO;
-        } else {
-            XSRETURN_UNDEF;
-        }
-#else
-        do_error(sth, 2000,
-                 "Async support was not built into this version of DBD::mysql", "HY000");
-        XSRETURN_UNDEF;
-#endif
-    }
-
-void _async_check(sth)
-    SV* sth
-  PPCODE:
-    {
-        D_imp_sth(sth);
-        D_imp_dbh_from_sth;
-        ASYNC_CHECK_XS(sth);
-        XSRETURN_YES;
-    }
 
 
 MODULE = DBD::mysql    PACKAGE = DBD::mysql::GetInfo
@@ -850,12 +640,6 @@ MODULE = DBD::mysql    PACKAGE = DBD::mysql::GetInfo
 #define SQL_MAXIMUM_TABLES_IN_SELECT 106
 #define SQL_MAX_TABLE_NAME_LEN 35
 #define SQL_SERVER_NAME 13
-#define SQL_ASYNC_MODE 10021
-#define SQL_MAX_ASYNC_CONCURRENT_STATEMENTS 10022
-
-#define SQL_AM_NONE       0
-#define SQL_AM_CONNECTION 1
-#define SQL_AM_STATEMENT  2
 
 
 #  dbd_mysql_getinfo()
@@ -872,11 +656,6 @@ dbd_mysql_get_info(dbh, sql_info_type)
     IV type = 0;
     SV* retsv=NULL;
     bool using_322=0;
-#if !defined(net_buffer_length)
-    /* From MySQL 5.7.9 net_buffer_length is no longer a macro that
-       can be used. Instead we declare a local variable. */
-    IV net_buffer_length;
-#endif 
 
     if (SvMAGICAL(sql_info_type))
         mg_get(sql_info_type);
@@ -897,20 +676,17 @@ dbd_mysql_get_info(dbh, sql_info_type)
 	    break;
 	case SQL_DBMS_VER:
 	    retsv = newSVpv(
-	        imp_dbh->pmysql->server_version,
-		strlen(imp_dbh->pmysql->server_version)
+	        imp_dbh->mysql.server_version,
+		strlen(imp_dbh->mysql.server_version)
 	    );
 	    break;
 	case SQL_IDENTIFIER_QUOTE_CHAR:
-	    retsv = newSVpv("`", 1);
+	    /*XXX What about a DB started in ANSI mode? */
+	    /* Swiped from MyODBC's get_info.c */
+	    using_322=is_prefix(mysql_get_server_info(&imp_dbh->mysql),"3.22");
+	    retsv = newSVpv(!using_322 ? "`" : " ", 1);
 	    break;
 	case SQL_MAXIMUM_STATEMENT_LENGTH:
-#if !defined(net_buffer_length)
-        /* From MySQL 5.7.9 net_buffer_length is no longer a macro
-           that can be used. Instead we use mysql_get_option to retrieve the
-           value into a local varaible. */
-        mysql_get_option(NULL, MYSQL_OPT_NET_BUFFER_LENGTH, &net_buffer_length);
-#endif 
 	    retsv = newSViv(net_buffer_length);
 	    break;
 	case SQL_MAXIMUM_TABLES_IN_SELECT:
@@ -921,24 +697,10 @@ dbd_mysql_get_info(dbh, sql_info_type)
 	    retsv= newSViv(NAME_LEN);
 	    break;
 	case SQL_SERVER_NAME:
-	    retsv= newSVpv(imp_dbh->pmysql->host_info,strlen(imp_dbh->pmysql->host_info));
+	    retsv= newSVpv(imp_dbh->mysql.host_info,strlen(imp_dbh->mysql.host_info));
 	    break;
-        case SQL_ASYNC_MODE:
-#if MYSQL_ASYNC
-            retsv = newSViv(SQL_AM_STATEMENT);
-#else
-            retsv = newSViv(SQL_AM_NONE);
-#endif
-            break;
-        case SQL_MAX_ASYNC_CONCURRENT_STATEMENTS:
-#if MYSQL_ASYNC
-            retsv = newSViv(1);
-#else
-            retsv = newSViv(0);
-#endif
-            break;
     	default:
- 		croak("Unknown SQL Info type: %i", mysql_errno(imp_dbh->pmysql));
+ 		croak("Unknown SQL Info type: %i",dbh);
     }
     ST(0) = sv_2mortal(retsv);
 

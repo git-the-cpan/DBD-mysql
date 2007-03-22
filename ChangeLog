@@ -1,301 +1,4 @@
-2015-12-18 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.033_02)
-* Compile against libssl by default. This allows to connect against remote
-  MySQL servers using SSL. Previously this was only achieved with an explicit
-  switch provided to Makefile.PL - if for some reason you can't or don't want
-  to link against libssl, you can use the new --nossl switch to Makefile.PL.
-* Made tests more robust after CPAN Testers failures.
-
-2015-12-15 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.033_01)
-* Raise minimum DBI version to 1.609 (from 2009!) in order to make
-  tests pass on RHEL5.
-* Add explicit documentation for how to enable SSL at build time,
-  provided by genio.
-* Improve test suite to make it more robust using mixed versions of client and
-  server.
-* Fix use after free error in my_login, provided by hannob.
-* Add explicit instructions stating brackets are required around ipv6-addresses
-  in connection strings, provided by Kenny Gryp.
-
-2015-10-26 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.033)
-* Full-release to include 03.
-
-2015-10-25 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.032_03)
-* Use mysql_get_option to read net_buffer_length and mysql_get_parameter
-   where available, needed for MySQL 5.7.9. Patch from berntm @ Oracle.
-   https://github.com/perl5-dbi/DBD-mysql/pull/42 
-* Fix mysql_conn_attrs test when run against MySQL 5.1 server.
-* Fix for memory leak to $sth->{ParamValues} , RT83051
-    https://rt.cpan.org/Public/Bug/Display.html?id=83051
-* Fixes for running test suite on MySQL 5.7.
-* Fix running test suite with InnoDB disabled, reported by bor.
-
-2015-07-20 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.032)
-* Full-release to include 02 and 01.
-
-2015-06-15 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.032_02)
-* Added support for utf8mb4 by Daniël van Eeden and Eric Herman (Booking.com)
-* Added patch for connection attributes in MySQL 5.6.6+, by Daniël van Eeden
-   and Eric Herman (Booking.com).
-
-2015-04-16 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.032_01)
-* Fixed test rt88006-bit-prepare on MyISAM storage
-   (Reported both in RT102657 and by Scimon on github)
-* Fix for https://rt.cpan.org/Public/Bug/Display.html?id=102717 "Fritz" Friedrich Haubensak (hsk AT fli-leibniz DOT de)
-Vielen Danken!
-* Corrected name ofINSTALL.pm in POD David Farrell <davidnmfarrell AT gmail DOT com>
-
-    Corrected name of INSTALL.pm in POD
-
-2015-03-05 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.031)
-* Added LICENSE
-* Reworked installation documentation in POD.
-* Allow use of bracketed IPv6 addresses in connection string (RT70640),
-   fix by Tim Mullin @ cPanel).
-* Locate mysql_config in path on MSWin32 (RT94838, reported by CHORNY).
-* Environment variable DBD_MYSQL_CONFIG actually works now.
-* Makefile.PL now correcly handles MariaDB's mysql_config.
-* Correct attribution to David Dick #86030: PATCH: adding statistics_info support
-* Test suite can now be run in parallel. Fixes RT98994 reported by DOHERTY.
-* Fixes for MySQL 5.6+ and for prepared statement handling (stevenh on github).
-* Fix for RT100792, New test t/05dbcreate.t fails if user has no permissions. 
-* Fix for bit test (RT68374, BJDEAN@cpan.org) CaptTofu added 40bit.t to test.
-
-
-2015-03-02 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.030_02)
-* Reworked installation documentation in POD.
-* Allow use of bracketed IPv6 addresses in connection string (RT70640),
-   fix by Tim Mullin @ cPanel).
-* Locate mysql_config in path on MSWin32 (RT94838, reported by CHORNY).
-* Environment variable DBD_MYSQL_CONFIG actually works now.
-* Makefile.PL now correcly handles MariaDB's mysql_config.
-
-2015-01-27 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.030_01)
-* Correct attribution to David Dick #86030: PATCH: adding statistics_info support
-* Test suite can now be run in parallel. Fixes RT98994 reported by DOHERTY.
-* Fixes for MySQL 5.6+ and for prepared statement handling (stevenh on github).
-* Fix for RT100792, New test t/05dbcreate.t fails if user has no permissions. 
-* Fix for bit test (RT68374, BJDEAN@cpan.org) CaptTofu added 40bit.t to test.
-
-2014-12-08 Patrick Galbraith (aka CaptTofu) and community (4.029)
-* Added fix to tests to create test database if not exists (contstant failure on Travis) (CaptTofu)
-* Support the fraction of (Oracle) MySQL Fabric that is supported by the most recent Connector/C (Steffen Mueller smueller<at>cpan<dot>org
-* Statistics Info Milan ¿orm <sorm<at>is4u<dot>cz> for work on statistics_info
-* Fix for RT 97625, use after free(), Reini Urban rurban<at>cpan<dot>org
-
-2014-08-01 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.028)
-* Fixed bug in mysql.xs where dbh was being used as error code
-* RT #97570: fix wrong salloc free in mysql_st_internal_execute - (Reini Urban, cPanel)
-* Fix RT #97625 use-after-free in mysql_dr_error, and #86153 - (Reini Urban, cPanel)
-* find mysql.h for MariaDB on Win32 (Graham Ollis)
-* Update mysql.pm to work with ipv6 and ipv4 addresses (katyavoid)
-
-2014-03-19 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.027)
-* Added more OS X notes and fixed compiler warnings
-* Skip tests if test database is not present-RT92330 (zefram <zefram at fysh dot org> 
-* metacpan.org and search.cpan.org didn't display module POD, caused by fix for RT90101. Reported by Oleg, RT92350.
-  
-2014-01-15 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.026)
-* t/29warnings.t fails on MySQL Server 5.1.something - Reported by RT91202, Gisle Aas. Now is handled depending on version.
-* README.pod misses proper NAME heading - RT90101 - Damyan Ivanov, Debian Perl Group
-* Added fix and test for RT91715
-* Added feature from Jacob Gelbman (cPanel) mysql_skip_secure_auth
-
-2013-11-05 Patrick Galbraith, Michiel Beijen, DBI/DBD community (4.025)
-* Set with parentheses and column_info - RT50304 - reported and fixed by Kevin Bosak.
-* Fix method redefinition warnings in threads on Perl >= 5.16 - Dagfinn Ilmari Mannsåker
-* use strict and warnings everywhere.
-* Minimum perl version is now 5.8.1, just as for DBI.
-* Improved database version check so tests run correctly on MariaDB 10.
-* Fix manifest - RT89106, reported by Joe Grasse.
-* set auto_increment_offset explicitly to make tests pass if they are set on server - RT83487, reported by Ian Barton.
-* Assume 'localhost' when testport is set but no testhost in Makefile.PL - RT83496, reported by Philip Stoev.
-* Corrected documentation for mysql_init_command option - Alexey Molchanov <alexey.molchanov@portaone.com>
-* Skip stored procedure tests if user is unpriviliged - RT83348 - Chris Weyl <cweyl@alumni.drew.edu>
-* Fix example in POD doc for NUM_OF_FIELDS - RT36730, reported by tapoutmma.
-* Fix for memory leak (RT86153) when connecting with incorrect password
-* Bail if connect fails early on (RT31823)
-
-2013-09-17 Michiel Beijen, Patrick Galbraith, DBI/DBD community (4.024)
-* Fix memory leak if mysql_server_prepare is enabled - RT76462 - Masahiro Chiba
-* Small dist improvements:  Michiel Beijen <michiel.beijen@otrs.com>
-* Undefined $DBI::errstr on execute fail on Windows: Michiel Beijen <michiel.beijen@otrs.com>
-* Better diagnostics for 80procs.t Fixes RT#71199: Alexandr Ciornii <alexchorny@gmail.com> 
-* Fix #64013: INSTALL.pod is shown with 'man install': Juergen Weigert <jw@suse.com>
-* Added 'testport' to keys in Makefile.PL Fixes RT#83492: Michiel Beijen <michiel.beijen@otrs.com>
-* Fixed test 70takeimp warning. Michiel Beijen <michiel.beijen@otrs.com>
-* Made test t/87async.t not stop on Win32. Michiel Beijen <michiel.beijen@otrs.com>
-* Update github location.  Update support information. Michiel Beijen <michiel.beijen@otrs.com>
-* POD Fixes  Patch from RT77043 by Gunnar Wolf, Debian Perl Group. Michiel Beijen <michiel.beijen@otrs.com>
-
-2013-04-12 Patrick Galbraith et open source community <patg at patg dot net> (4.023)
-    Fix memory leak if mysql_server_prepare is enabled.
-* Fix primary_key_info result ordering - https://github.com/CaptTofu/DBD-mysql/pull/39 - Dagfinn Ilmari Mannsåker
-* allow compilation with msvc - https://github.com/CaptTofu/DBD-mysql/pull/37 - Walde Christian
-* just to set MYSQL_OPT_WRITE_TIMEOUT and MYSQL_OPT_READ_TIMEOUT by dsn - https://github.com/CaptTofu/DBD-mysql/pull/36 - Naosuke Yokoe 
-* just remove unnecessary "my" - https://github.com/CaptTofu/DBD-mysql/pull/34 - Shoichi Kaji
-* eval $ExtUtils::MakeMaker::VERSION requires for old ExtUtils::MakeMaker - https://github.com/CaptTofu/DBD-mysql/pull/32 - Daisuke Murase
-* Updated documentation to reflect that bugs will be reported at rt.cpan.org
-* Updated version
-* Chased tail finding issue with -1 being converted to max unsigned int in PS mode
-* Various typos and other unicode fixes dsteinbrunner <dsteinbrunner@gmail.com>
-* Fixed permissions on files.
-* Clarified documentation and bumped version for next release
-
-2012-08-28 Patrick Galbraith et open source community <patg at patg dot net> (4.022)
-* Fixes for Win32 from Rom Hoelz (https://github.com/hoelzro) 
-* Pulling back in work for 4.021 that didn't get pushed and much other work from Chip Salzenberg (https://github.com/chipdude)
-* Column info order fix from Tokuhiro Matsuno (https://github.com/tokuhirom)
-* Fix AutoCommit comparison logic to avoid spurious commands to mysql from Matthew Horsfall (https://github.com/wolfsage)
-* server_preapre can't bind placeholder on comment. from Misahiro Chiba (https://github.com/nihen)
-* server_prepare; data is null, allocate big memory bug. from Misahiro Chiba (https://github.com/nihen)
- 
-2012-04-15 Patrick Galbraith (work of others) <patg at patg dot net> (4.021)
-* Fix to enable PERL_NO_GET_CONTEXT to spee up DBD on thread Perls 
-(Dave Mitchell <davem at iabyn dot com>) Thank you!
-* Fix to is_prefix not being exported by mysql Aran Deltax <bluefeet at gmail dot com> Thank you!
-* Eliminate DBIS usage Dagfinn Ilmari Mannsåker <ilmari at ilmari dot org> Thank you!
-* Enhanced / Fixed server side prepared statement checks (Steven Hartland) Thank you!
-* Fix missprint in doc of DBD::mysql of mysql_bind_type_guessing (Perlover http://blog.perloever.com) Thank you!
-* Misprint in lib/DBD/mysql.pm (Perlover) Thank you!
-
-2011-08-15 Patrick Galbraith <patg at patg dot net> (4.020)
-* Numerous (!! Thank you!!) fixes for prepared statements: Masahiro Chiba <nihen at megabbs
-dot com>
-	- Chop blanks fixed
-	- UTF8 improvements
-	- fixed memory allocation for BLOBs
-	- auto-reconnect
-* Fix in leak test, which failed sometime due to first assignment $prev_size over
-paging (Masahiro Chiba)
-* Catalog test allows use of schemas other than 'test' (Masahiro Chiba)
-* Documentation fix for auto_reconnect (Karen Etheridge <ether at cpan dot
-org>)
-* Win32 and general installation fixes (Alexandr Ciornii, http://chorny.net)
-
-
-2011-05-08 Patrick Galbraith <patg at patg dot net>  Rob Hoelz <rhoelz at inoc dot com> (4.019)
-* Asynchronous support added by Rob Hoelz - Thanks!
-* Amiri Barksdale - Enable environment variables for installation options, add
-docs to POD - Thanks!
-* Pedro Melo - fix to change sv_undef to PL_sv_undef from 4.018 - Thanks!
- 
-2010-10-11 Patrick Galbraith <patg at patg dot net> (4.018)
-* Added client and server info patch from Robert M. Jansen
-* Added documentation and tests for new features
-* More code cleanup
-
-2010-08-11 Patrick Galbraith <patg at patg dot net> (4.017)
-* BUG #60085, Andreas Koenig's patch for DBI changes
-* Updated documents
-
-2010-07-10 Patrick Galbraith <patg at patg dot net> (4.016)
-* Disabled mysql_bind_type_guessing due to one performance issue 
-  querying on a indexed character column unquoted will mean the index 
-  is not used
-* Fixed int types that should be bools
-
-2010-07-09 Patrick Galbraith <patg at patg dot net> (4.015)
-* BUG #56664 fixed t/40blobs.t skip_all logic (W. Phillip Moore)
-* BUG #57253 Fixed iteration past end of string (crash). (Chris Butler)
-* Added a new parameter for old behavior- mysql_bind_comment_placeholders which 
-  will make it possible to have placeholders bound for those who really 
-  want that behavior.
-* Fixed bind_type_guessing - always on now 
-
-2010-04-14 Patrick Galbraith <patg at patg dot net> (4.014)
-* BUG #30033 Fixed handling of comments to allow comments that contain characters
-  that might otherwise cause placeholder detection to not work properly
-* BUG #53844, Fix for memory leak in stats. (Gregory Burmistrov)
-* BUG #49719, Fix for handling of NULLs in prepared statements (Gert Pache)
-* BUG #55627, Fix for testing failure due to strict mode (Yves) 
-* BUG #51784, Fix for mysqladmin on Windows in Makefile (Zeeshan Muhammad)
-* BUG #41630, Typo in Makefile
-* Had to define true and false in dbdimp.h. Didn't work out of the box on Linux
-
-2009-09-16 Patrick Galbraith <patg at patg dot net> (4.013)
-
-* #49484: PATCH add support for MYSQL_INIT_COMMAND - Peter John Edwards 
-* #48242: 'mysql_bind_type_guessing' doesn't work correctly
-with minus sign - Thanks Serguei Trouchelle!
-* #45616: t/40blobs.t cannot pass without database access - 
-ServerError() not declared - Thanks ysth http://ysth.livejournal.com/
-
-2009-06-18 Patrick Galbraith <patg at patg dot net> (4.012)
-
-* Patch to bind_type_guessing from Craigslist, 
-  Thanks to Chris! Happiness is no quoted numbers. 
-  Fixed ChopBlanks to work with bind_type_guessing
-* Patch for win32 strawberry build 
-  Thanks to Curtis Jewell! Windows needs love
-* Patch for auto-reconnect to set active flag
-  Thanks to Doug Fischer!
-* Fixed bug 32464 http://bugs.mysql.com/bug.php?id=32464.
-  See https://rt.cpan.org/Ticket/Display.html?id=46308
-  Add connection flag mysql_no_autocommit_cmd which users of
-  MySQL Proxy can use to prevent 'set autocommit=#' from being
-  issued by the driver. 'perldoc DBD::mysql' to see how to use
-  this new flag
-* Added bind-type-guessing options to Makefile.PL so the entire 
-  test suite can be run with bind_type_guessing set.
-
-2009-04-13 Patrick Galbraith <patg at patg dot net> (4.011)
-* Renamed unsafe_bind_type_guessing, fixed some of the logic. This
-can be used to deal with bug 43822 
-(https://rt.cpan.org/Ticket/Display.html?id=43822)
-* Patch from Daniel Frett (daniel Dot frett At ccci Dot org) to fix 
-issue of binding sever side integer parameters (server-side prepare
-statements) resulting in corrupt data, bug 42723 
-(https://rt.cpan.org/Ticket/Display.html?id=42723)
-* Updated documentation, cruft cleanup (as always)
-
-2008-10-24 Patrick Galbraith <patg at patg dot net> (4.010)
-* Fix to dbd_bind_ph() for uninitialized value 'buffer_length'
-thanks for bug report and patch from Askniel.com (thanks!)
-
-2008-10-21 Patrick Galbraith <patg at patg dot net> (4.009)
-* Fix to re-enable TAKE_IMP_DATA_VERSION. Still have to ensure DBI version 1.607 or higher
-* Fix to escaped single quotes throwing off bind param detection. Patch from Zhurs (zhurs@yandex.ru) Spasibo!
-
-2008-8-15 Patrick Galbraith <patg at patg dot net> (4.008)
-* Multi statement patch, thanks to Chris Heath!
-* Disabled TAKE_IMP_DATA_VERSION because segfault with DBI < 1.607
-* #29528: bind_param(..., SQL_FLOAT) ignores exponents - fixed, Thanks to
-Tokuhiro Matsuno!
-* Cleanups to make mysqlEmb work under Cygwin - Thanks to Chris Rodgers  
-<http://rodgers.org.uk/> ! 
-* Modified and disabled tests for MySQL version < 4.1 for unsupported features
-
-2008-5-11 Patrick Galbraith <patg at patg dot net> (4.007)
-
-* Took out mysql_server_init call where not needed
-* Complete re-write of test suit to use Test::More - tons of cleanups!
-* Makefile.PL changes to use current user in 'make test' if not defined
-
-2007-12-26 Patrick Galbraith <patg at patg dot net> (4.006)
-
-* Cleanups on OS X compile
-* Fixes to syntax errors on AIX
-* Removed test code that was leaving trace files around
-
-2007-3-22 Patrick Galbraith <patg at patg dot net> (4.005)
-
-* Fixed mysql_warning issue < 4.1 (reminers, patches, help from ROAM, (issue 25713)
-* makerealclean patch from ROAM (issue #25714)
-* sqlstate cleanup patch from ROAM
-* Replaced all references to dbis to use imp_xxh per DBI best practices
-* Fix to dbd_st_destroy - added back previously removed 'free everything' code which 
-  had been moved to dbd_st_finish, causing a crash upon freeing of bind values 
-  after all rows resulting from one execution of a query have been fetched. This meant
-  that next attempt to execute the prepared statement would segfault. This
-  work thanks to Rainer Weikusat!
-* Removed all 'FindNewTable' calls in all tests. Just use 't1' for all tests to 
-  simplify things. Plus, this is how MySQL internall tests.
-* Better 'skip test' logic in some tests that were still running when they shouldn't 
-  have been.
-
-
-
-2007-3-22 Patrick Galbraith <patg at patg dot net> Jim Winstead <jimw@mysql.com> (4.004)
+2007-3-22 Patrick Galbraith <patg@grazr.com> Jim Winstead <jimw@mysql.com> (4.004)
 * Work around a bug in old 3.23 servers by specifying NOT NULL for fields used
   as a primary key in tests. (Bug #20325, reported by Julian Ladisch)
 * Add support for mysql_warning_count statement handle attribute. (Bug #25457,
@@ -310,11 +13,11 @@ Tokuhiro Matsuno!
 * Fixed do_error definition (Scott Hildreth, Tim Bunce)
 * Conversion of test suite to Test::More
 
-2007-3-5 Patrick Galbraith <patg at patg dot net> Jim Winstead <jimw@mysql.com> (4.003)
+2007-3-5 Patrick Galbraith <patg@grazr.com> Jim Winstead <jimw@mysql.com> (4.003)
 * Fix inclusion of non-primary keys in primary_key_info. (Bug #26786,
   reported and patch by Dave Rolsky)
 
-2007-3-1 Patrick Galbraith <patg at patg dot net> Jim Winstead <jimw@mysql.com> (4.002)
+2007-3-1 Patrick Galbraith <patg@grazr.com> Jim Winstead <jimw@mysql.com> (4.002)
 * Fix re-exec of Makefile.PL when forcing $ENV{LANG} to 'C'. (RT #25233,
   reported by Slaven Rezic)
 * Rewrote table_info method to support all arguments (previously it would
@@ -344,7 +47,7 @@ Tokuhiro Matsuno!
   Dave Rolsky, and final implementation based on Connector/J code)
 
 
-2007-1-8 Jim Winstead <jimw@mysql.com> Patrick Galbraith <patg at patg dot net> (4.001)
+2007-1-8 Jim Winstead <jimw@mysql.com> Patrick Galbraith <patg@grazr.com> (4.001)
 * Fix handling of unsigned integer values in result sets when using
   server-side prepared statements (they were not retrieved at all).
 * Fix handling of signed integer values when using server-side prepared
@@ -384,7 +87,7 @@ Tokuhiro Matsuno!
 * Tested with ALL mysql versions, fixed 40types, 40bind_param tests to work with 4.0, 4.1
 * Fixed dbdimp.c to not test for MYSQL_DATA_TRUNCATED unless >= mysql 5.0 
 
-2006-12-22 Patrick Galbraith <patg at patg dot net>, Alexey Stroganov (4.00)
+2006-12-22 Patrick Galbraith <patg@patg.net>, Alexey Stroganov (4.00)
 * Added Alexey Stroganov's patch which fixes varying number of columns in 
   multiple result sets. Added new test cases to 80procs.t based of his
   test script (bug #21028) (Thanks Alexey!). Also fixed 80procs.t to allow
@@ -398,11 +101,11 @@ Tokuhiro Matsuno!
 * Turned off prepared statements by default
 * Tested this with 5.1, 5.0, 4.1, 4.0. Works with ALL these versions!
 
-2006-10-10 Patrick Galbraith <patg at patg dot net>, Alexey Stroganov (3.0009_1)
+2006-10-10 Patrick Galbraith <patg@patg.net>, Alexey Stroganov (3.0009_1)
 * Added fbind and bind alloc to dbd_st_describe. This was causing a crash
   when using with mod_perl
 
-2006-10-10 Patrick Galbraith <patg at patg dot net> (3.0008_1)
+2006-10-10 Patrick Galbraith <patg@patg.net> (3.0008_1)
 * Added patch for SSL Verify Certificate (Thanks Eric Chen!)
 * Added multiple fixes to dbd_st_prepare which fixed variable overwrite
   and unset increment counter. Also improved loop which checks statements
@@ -413,7 +116,7 @@ Tokuhiro Matsuno!
   (Thanks to Eric Milkie!)
 * Fixed casting of num_params to unsigned int in calls to NewZ in mysql.xs
 
-2006-10-07 Patrick Galbraith <patg at patg dot net>, Jim Winstead <jimw@mysql.com>
+2006-10-07 Patrick Galbraith <patg@patg.net>, Jim Winstead <jimw@mysql.com>
   (3.0007_2)
   * Added UTF8 patch from Dominic Mitchell (Thanks!)
   * Fixed declaration of "row" in mysql_st_internal_execute which caused compile
@@ -944,7 +647,7 @@ Tokuhiro Matsuno!
 1999-01-05  Jochen Wiedmann  <joe@ispsoft.de> (1.21_13)
 
 	* nodbd/nodbd.pm.in (query): Now setting $db_errstr
-	  (Andreas König, andreas.koenig@anima.de).
+	  (Andreas K�nig, andreas.koenig@anima.de).
 	* dbd/dbdimp.c (dbd_db_quote): Giving up to use "NULL" as a
 	  static string. :-( My thanks to David Foo (dfoo@web.fairfax.com.au)
 	  and Christian Schwarz (schwarz@monet.m.isar.de) for convincing
@@ -967,7 +670,7 @@ Tokuhiro Matsuno!
 	* INSTALL: Updated the WIN32 INSTALLATION section.
 	* nodbd/statement.pm.in (fetchrow): Enhanced compatibility to
 	  previous Msql versions by returning the first column now in
-	  scalar context. (Andreas König, andreas.koenig@anima.de)
+	  scalar context. (Andreas K�nig, andreas.koenig@anima.de)
 	* Makefile.PL (Init): Default of installing Msql, Mysql and Msql1
 	  is now "no", unless you already have the Mysql emulation layer
 	  installed.
@@ -1027,7 +730,7 @@ Tokuhiro Matsuno!
 
 	* INSTALL: Added a hint for Remote_Access in msql.conf
 	* nodbd/nodbd.pm.in (quote): Made quote a class method; Andreas
-	  König <koenig@anna.mind.de>.
+	  K�nig <koenig@anna.mind.de>.
 	* dbd/myMsql.h (MyReconnect): Fixed $dbh->ping() for MySQL.
 	  My thanks to Nikki Chumakov (nikki@paranoia.ru).
 	* dbd/dbimon.in: Added dump mode.
@@ -1342,6 +1045,8 @@ Fri Oct 24 01:29:08 1997  Jochen Wiedmann  <joe@ispsoft.de> (1.1816)
 	* lib/Msql/Statement.pm: Fixed use of Msql::TEXT_TYPE without
 	  checking whether we are running Msql 1.
 
+$Id: ChangeLog 9299 2007-03-22 22:14:29Z capttofu $
+
 DBD::mysql for DBI - Written by Jochen Wiedmann <joe@ispsoft.de>
 
 97.09.27 V1.1812
@@ -1427,7 +1132,7 @@ DBD::mysql for DBI - Written by Jochen Wiedmann <joe@ispsoft.de>
 97.08.27  Removed use of TEXT_TYPE from pmysql and Mysql/Statement.pm.
 
 97.08.16  Modified mysql.xs, dbdimp.h and dbdimp.c for use in DBD::mSQL.
-	  Now using Andreas König´s Makefile.PL from the DBD::mSQL
+	  Now using Andreas K�nig�s Makefile.PL from the DBD::mSQL
 	  distribution.
 	  Added check for disabled '-lgcc' on Linux; this leads to a
 	  missing __moddi3 symbol in libmysqlclient.a, when running

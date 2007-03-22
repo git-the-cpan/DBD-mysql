@@ -1,95 +1,169 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40blobs.t 1103 2003-03-18 02:53:28Z rlippan $
+#
+#   This is a test for correct handling of BLOBS; namely $dbh->quote
+#   is expected to work correctly.
+#
 
-use DBI;
-use Test::More;
+#
+# Thank you to Brad Choate for finding the bug that resulted in this test,
+# which he kindly sent code that this test uses!
+#
 
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+
+
+#
+#   Include lib.pl
+#
+require DBI;
+$mdriver = "";
 my $update_blob;
-use vars qw($test_dsn $test_user $test_password);
-use lib 't', '.';
-require 'lib.pl';
-
-my $dbh;
-eval {$dbh = DBI->connect($test_dsn, $test_user, $test_password,
-  { RaiseError => 1, AutoCommit => 1})};
-
-if ($@) {
-  plan skip_all => "no database connection";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
 }
-plan tests => 25;
 
 my @chars = grep !/[0O1Iil]/, 0..9, 'A'..'Z', 'a'..'z';
 my $blob1= join '', map { $chars[rand @chars] } 0 .. 10000;
-my $blob2 = '"' x 10000;
+$blob2 = '"' x 10000;
 
-sub ShowBlob($) {
-  my ($blob) = @_;
-  my $b;
-  for(my $i = 0;  $i < 8;  $i++) {
-    if (defined($blob)  &&  length($blob) > $i) {
-      $b = substr($blob, $i*32);
-    }
-    else {
-      $b = "";
-    }
-    note sprintf("%08lx %s\n", $i*32, unpack("H64", $b));
-  }
+sub ServerError() {
+    my $err = $DBI::errstr; # Hate -w ...
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
 }
 
-my $create = <<EOT;
-CREATE TABLE dbd_mysql_41blobs_prepare (
-  id int(4),
-  name text)
-EOT
+sub ShowBlob($) {
+    my ($blob) = @_;
+    for($i = 0;  $i < 8;  $i++) {
+	if (defined($blob)  &&  length($blob) > $i) {
+	    $b = substr($blob, $i*32);
+	} else {
+	    $b = "";
+	}
+	printf("%08lx %s\n", $i*32, unpack("H64", $b));
+    }
+}
 
-ok $dbh->do("DROP TABLE IF EXISTS dbd_mysql_41blobs_prepare"), "drop table if exists dbd_mysql_41blobs_prepare";
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+#
+#   Connect to the database
+  Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
+    or ServerError();
 
-ok $dbh->do($create), "create table dbd_mysql_41blobs_prepare";
+#
+#   Find a possible new table name
+#
+  Test($state or $table = FindNewTable($dbh))
+    or DbiError($dbh->error, $dbh->errstr);
 
-my $query = "INSERT INTO dbd_mysql_41blobs_prepare VALUES(?, ?)";
-my $sth;
-ok ($sth= $dbh->prepare($query));
+# 
+# create a new table
+#
+  Test($state or
+      $dbh->do("CREATE TABLE $table (id int(4), name text)"))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok defined($sth);
+  my($def);
 
-ok $sth->execute(1, $blob1), "inserting \$blob1";
+#
+#   Insert a row into the test table.......
+#
+  my($query, $sth);
+  if (!$state) {
+    $query = "INSERT INTO $table VALUES(?, ?)";
+  }
+  Test($state or $sth= $dbh->prepare($query))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->finish;
+  Test($state or $sth->execute(1, $blob1))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth= $dbh->prepare("SELECT * FROM dbd_mysql_41blobs_prepare WHERE id = 1"));
+  Test($state or $sth->finish)
+    or DbiError($sth->err, $sth->errstr);
 
-ok $sth->execute, "select from dbd_mysql_41blobs_prepare";
+  Test($state or undef $sth || 1)
+    or DbiError($sth->err, $sth->errstr);
 
-ok (my $row = $sth->fetchrow_arrayref);
+#
+#   Now, try SELECTing the row out.
+#
+  Test($state or $sth=
+      $dbh->prepare("SELECT * FROM $table WHERE id = 1"))
+    or DbiError($dbh->err, $dbh->errstr);
 
-is @$row, 2, "two rows fetched";
+  Test($state or $sth->execute)
+    or DbiError($dbh->err, $dbh->errstr);
 
-is $$row[0], 1, "first row id == 1";
+  Test($state or (defined($row = $sth->fetchrow_arrayref)))
+    or DbiError($sth->err, $sth->errstr);
 
-cmp_ok $$row[1], 'eq', $blob1, ShowBlob($blob1);
+  Test($state or (@$row == 2 && $$row[0] == 1 && $$row[1] eq $blob1))
+    or (ShowBlob($blob1),
+        ShowBlob(defined($$row[1]) ? $$row[1] : ""));
 
-ok $sth->finish;
+  Test($state or $sth->finish)
+    or DbiError($sth->err, $sth->errstr);
 
-ok ($sth= $dbh->prepare("UPDATE dbd_mysql_41blobs_prepare SET name = ? WHERE id = 1"));
+  Test($state or undef $sth || 1)
+    or DbiError($sth->err, $sth->errstr);
 
-ok $sth->execute($blob2), 'inserting $blob2';
+  Test($state or $sth=
+      $dbh->prepare("UPDATE $table SET name = ? WHERE id = 1"))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth->finish);
+  Test($state or $sth->execute($blob2))
+    or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth= $dbh->prepare("SELECT * FROM dbd_mysql_41blobs_prepare WHERE id = 1"));
+  Test($state or $sth->finish)
+    or DbiError($sth->err, $sth->errstr);
 
-ok ($sth->execute);
+  Test($state or undef $sth || 1)
+    or DbiError($sth->err, $sth->errstr);
 
-ok ($row = $sth->fetchrow_arrayref);
+  Test($state or $sth=
+      $dbh->prepare("SELECT * FROM $table WHERE id = 1"))
+    or DbiError($dbh->err, $dbh->errstr);
 
-is scalar @$row, 2, 'two rows';
+  Test($state or $sth->execute)
+    or DbiError($dbh->err, $dbh->errstr);
 
-is $$row[0], 1, 'row id == 1';
+  Test($state or (defined($row = $sth->fetchrow_arrayref)))
+    or DbiError($sth->err, $sth->errstr);
 
-cmp_ok $$row[1], 'eq', $blob2, ShowBlob($blob2);
+  Test($state or (@$row == 2  &&  $$row[0] == 1  &&  $$row[1] eq $blob2))
+    or (ShowBlob($blob2),
+        ShowBlob(defined($$row[1]) ? $$row[1] : ""));
 
-ok ($sth->finish);
+  Test($state or $sth->finish)
+    or DbiError($sth->err, $sth->errstr);
 
-ok $dbh->do("DROP TABLE dbd_mysql_41blobs_prepare"), "drop dbd_mysql_41blobs_prepare";
+  Test($state or undef $sth || 1)
+    or DbiError($sth->err, $sth->errstr);
 
-ok $dbh->disconnect;
+#
+#   Finally drop the test table.
+#
+  Test($state or $dbh->do("DROP TABLE $table"))
+    or DbiError($dbh->err, $dbh->errstr);
+}

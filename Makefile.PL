@@ -1,23 +1,31 @@
 # -*- cperl -*-
 
-use strict;
-use warnings;
-use utf8;
+BEGIN {
+    use Config;
 
-use 5.008_001;
-use Config;
-use Getopt::Long;
-use ExtUtils::MakeMaker;
-use Data::Dumper;
+    if ($] == 5.008 && $ENV{"LANG"} ne "C") {
+	$ENV{LANG} = "C";
+	print STDERR "\n\n\n\$ENV{LANG} is not 'C' execing 'perl Makefile.PL'".
+	" with ENV{LANG} == 'C'\n You can skip this check by: 'export ".
+	"LANG='C' before running 'perl Makefile.PL or by upgrading your Perl'\n\n\n";
+
+	sleep(5);
+        exec ($Config{perlpath}, $0, @ARGV )|| die $!;
+    }
+}
+use strict;
+BEGIN { $^W = 1; }
+use Getopt::Long();
+use ExtUtils::MakeMaker();
+use Data::Dumper ();
 use File::Path;
 use File::Copy;
-use File::Basename;
-use File::Spec;
 require DBI::DBD;
 
 my $TESTDB = "test";
 
-our $opt = { "help" => \&Usage, };
+use vars qw($opt);
+$opt = { "help" => \&Usage, };
 
 Getopt::Long::GetOptions(
     $opt,
@@ -32,39 +40,32 @@ Getopt::Long::GetOptions(
     "libs=s",
     "verbose",
     "ps-protocol",
-    "bind-type-guessing",
     "nocatchstderr",
-    "ssl",
-    "nossl",
+    "ssl!",
     "nofoundrows!",
     "embedded=s",
     "mysql_config=s",
-    "force-embedded",
-    "with-mysql=s"
+    "force-embedded"
     ) || die Usage();
 
 my $source = {};
 
+if ($^O !~ /mswin32/i)
+{
   #Check for mysql_config first
-  $source->{'mysql_config'} = "guessed";
-
-  if ($opt->{'mysql_config'}) {
-    $source->{'mysql_config'} = 'Users choice';
-  }
-  if (!$opt->{'mysql_config'} && $ENV{DBD_MYSQL_CONFIG}) {
-     $opt->{'mysql_config'} = $ENV{DBD_MYSQL_CONFIG};
-     $source->{'mysql_config'} = 'environment';
-  }
+  $source->{'mysql_config'}="guessed";
   if ($opt->{'mysql_config'})
-  {
-    $opt->{'mysql_config'} = Win32::GetShortPathName($opt->{'mysql_config'})
-        if $^O eq 'MSWin32';
-    if (!-f $opt->{'mysql_config'})
+  {  
+    if (-f $opt->{'mysql_config'})
+    {
+      $source->{'mysql_config'} = "Users choice";
+    }
+    else
     {
       print <<"MSG";
 
-Specified mysql configuration script '$opt->{'mysql_config'}' doesn't exist.
-Please check path/permissions. Will try to use default mysql_config
+Specified mysql configuration script '$opt->{'mysql_config'}' doesn't exist. 
+Please check path/permissions. Will try to use default mysql_config 
 script found through PATH.
 MSG
       $opt->{'mysql_config'}= "mysql_config";
@@ -76,30 +77,26 @@ MSG
     {
       print <<MSG;
 
-Cannot find the file 'mysql_config'! Your execution PATH doesn't seem
+Cannot find the file 'mysql_config'! Your execution PATH doesn't seem 
 not contain the path to mysql_config. Resorting to guessed values!
 MSG
     }
     $opt->{'mysql_config'} = "mysql_config";
   }
-
-for my $key (qw/testdb testhost testuser testpassword testsocket testport
-                    cflags embedded libs nocatchstderr nossl nofoundrows
-                    ps-protocol bind-type-guessing force-embedded/)
-{
-  Configure($opt, $source, $key);
 }
 
-#if we have a testport but no host, assume localhost
-if ( $opt->{testport} && !$opt->{testhost} ) {
-  $opt->{testhost} = 'localhost';
-  $source->{testhost} = 'guessed';
+foreach my $key (qw/testdb testhost testuser testpassword testsocket 
+                    cflags embedded libs nocatchstderr ssl nofoundrows
+                    ps-protocol force-embedded/)
+{
+  Configure($opt, $source, $key);
 }
 
 #We have to rename/move Makefile.PL in mysqlEmb directory
 #since MakeMaker will find it and will try to execute it.
 if (-f "mysqlEmb/Makefile.PL")
 {
+  eval { require File::Copy };
   move ("mysqlEmb/Makefile.PL", "mysqlEmb/Makefile.PL.old");
 }
 
@@ -110,12 +107,8 @@ if ($opt->{'embedded'})
 {
   if ($source->{'embedded'} eq 'mysql_config')
   {
-    #We have to use libmygcc to resolve linking problem
-    # this causes problems for cygwin
-    #$opt->{'embedded'} .= " -lmygcc";
-    # Under Cygwin (at least) we have to use libstdc++ to resolve linking
-    # problem because libmysqld is built using g++ rather than gcc.
-    $opt->{'embedded'} .= " -lstdc++";
+    #We have to use libmygcc to resolve linking problem  
+    $opt->{'embedded'} .= " -lmygcc";
   }
 
   my @files = ($^O =~ /mswin32/i) ? qw(mysqlclient.lib) :
@@ -136,7 +129,7 @@ Please use
 
   perl Makefile.PL --embedded="-L<dir> <flags>"
 
-to set correct directory. For details see DBD::mysql::INSTALL,
+to set correct directory. For details see the INSTALL.html file,
 section "Linker flags" or type
 
   perl Makefile.PL --help
@@ -162,19 +155,18 @@ I will use the following settings for compiling and testing:
 MSG
 
 delete $opt->{'help'};
-delete $opt->{'ssl'};
 my $keylen = 0;
-for my $key (keys %$opt)
+foreach my $key (keys %$opt)
 {
   $keylen = length($key) if length($key) > $keylen;
 }
 my $slen = 0;
-for my $val (values %$source)
+foreach my $val (values %$source)
 {
   $slen = length($val) if length($val) > $slen;
 }
 
-for my $key (sort { $a cmp $b} keys %$opt)
+foreach my $key (sort { $a cmp $b} keys %$opt)
 {
   printf("  %-" . $keylen . "s (%-" . $slen . "s) = %s\n",
 	 $key, $source->{$key}, $opt->{$key})
@@ -183,18 +175,17 @@ for my $key (sort { $a cmp $b} keys %$opt)
 print <<"MSG";
 
 To change these settings, see 'perl Makefile.PL --help' and
-'perldoc DBD::mysql::INSTALL'.
+'perldoc INSTALL'.
 
 MSG
 
-sleep 1;
+sleep 5;
 
-my $dsn= '';
-if (exists $opt->{'ps-protocol'}) {
-  $dsn = "\$::test_dsn .= \";mysql_server_prepare=1\";\n";
-}
-elsif (exists $opt->{'bind-type-guessing'}) {
-    $dsn= "\$::test_dsn .= \";mysql_bind_type_guessing=1\";\n";
+eval { require File::Spec };
+my $ps_dsn= "";
+if (exists $opt->{'ps-protocol'}) 
+{
+  $ps_dsn = "\$::test_dsn .= \";mysql_server_prepare=1\";\n"; 
 }
 my $fileName = $@ ?
   "t/mysql.mtest" : File::Spec->catfile("t", "mysql.mtest");
@@ -210,7 +201,7 @@ my $fileName = $@ ?
 	      "\$::test_dsn .= \";mysql_socket=\$::test_socket\" if \$::test_socket;\n" .
               "\$::test_dsn .= \":\$::test_host\" if \$::test_host;\n" .
 	      "\$::test_dsn .= \":\$::test_port\" if \$::test_port;\n".
-              $dsn .
+              $ps_dsn .
 	      "} 1;\n"))  &&
   close(FILE))  ||  die "Failed to create $fileName: $!";
 
@@ -219,22 +210,20 @@ my $cflags = "-I\$(DBI_INSTARCH_DIR) $opt->{'cflags'}";
 if ($^O eq 'VMS') {
   $cflags = "\$(DBI_INSTARCH_DIR),$opt->{'cflags'}";
 }
-$cflags .= " -DDBD_MYSQL_WITH_SSL" if !$opt->{'nossl'};
+$cflags .= " -DDBD_MYSQL_WITH_SSL" if $opt->{'ssl'};
 $cflags .= " -DDBD_MYSQL_INSERT_ID_IS_GOOD" if $DBI::VERSION > 1.42;
 $cflags .= " -DDBD_NO_CLIENT_FOUND_ROWS" if $opt->{'nofoundrows'};
 $cflags .= " -g ";
 my %o = ( 'NAME' => 'DBD::mysql',
 	  'INC' => $cflags,
 	  'dist'         => { 'SUFFIX'       => ".gz",
-			      'DIST_DEFAULT' => 'all tardist',
+			      'DIST_DEFAULT' => 'all installhtml tardist',
 			      'COMPRESS'     => "gzip -9f" },
 	  'clean' => { 'FILES' => '*.xsi' },
-		'realclean' => { 'FILES' => 't/mysql.mtest' },
           'C' => ["dbdimp.c", "mysql.c"],
           'XS' => {'mysql.xs' => 'mysql.c'},
 	  'OBJECT' => '$(O_FILES)',
 	  'LIBS' => $opt->{'libs'},
-	  $opt->{'ldflags'} ? ('LDFLAGS' => $opt->{'ldflags'}) : (),
 	  'VERSION_FROM' => 'lib/DBD/mysql.pm'
 	);
 
@@ -259,11 +248,11 @@ if ($opt->{'embedded'})
                                                        makedir => 'mysqlEmb/lib/DBD/mysqlEmb'
                                                      },
                        't/mysql.dbtest' => { filename => 'mysqlEmb/t/mysqlEmb.dbtest',
-                                             makedir => 'mysqlEmb/t'
+                                             makedir => 'mysqlEmb/t' 
                                            },
                        't/mysql.mtest' => { filename => 'mysqlEmb/t/mysqlEmb.mtest',
                                              makedir => 'mysqlEmb/t',
-                                             replace =>  { 'DBI:mysql'=> 'DBI:mysqlEmb',
+                                             replace =>  { 'DBI:mysql'=> 'DBI:mysqlEmb', 
                                                             'test_db";' => 'test_db;mysql_embedded_options=--datadir=./t,--skip-innodb,--skip-bdb";'
                                                          }
                                            },
@@ -271,6 +260,9 @@ if ($opt->{'embedded'})
                                        replace =>  { '\$mdriver =.*' => "\$mdriver =\'mysqlEmb\';"},
                                        makedir => 'mysqlEmb/t'
                                     },
+                       't/10dsnlist.t' => { filename => 'mysqlEmb/t/10dsnlist.t',
+                                            makedir => 'mysqlEmb/t'
+                                          },
                        't/20createdrop.t' => { filename => 'mysqlEmb/t/20createdrop.t',
                                                makedir => 'mysqlEmb/t'
                                              },
@@ -299,6 +291,21 @@ if ($opt->{'embedded'})
                                                                     makedir => 'mysqlEmb/t'
                                                                   },
                        't/60leaks.t' => { filename => 'mysqlEmb/t/60leaks.t',
+                                                                    makedir => 'mysqlEmb/t'
+                                                                  },
+                       't/dbdadmin.t' => { filename => 'mysqlEmb/t/dbdadmin.t',
+                                                                    makedir => 'mysqlEmb/t'
+                                                                  },
+                       't/insertid.t' => { filename => 'mysqlEmb/t/insertid.t',
+                                                                    makedir => 'mysqlEmb/t'
+                                                                  },
+                       't/texecute.t' => { filename => 'mysqlEmb/t/texecute.t',
+                                                                    makedir => 'mysqlEmb/t'
+                                                                  },
+                       't/prepare_noerror.t' => { filename => 'mysqlEmb/t/prepare_noerror.t',
+                                                                    makedir => 'mysqlEmb/t'
+                                                                  },
+                       't/param_values.t' => { filename => 'mysqlEmb/t/param_values.t',
                                                                     makedir => 'mysqlEmb/t'
                                                                   },
                        't/00base.t' => { filename => 'mysqlEmb/t/00base.t',
@@ -339,92 +346,23 @@ if ($opt->{'embedded'})
 
   $e{'INC'} .= " -DDBD_MYSQL_EMBEDDED";
 
-  print "Preparing embedded Makefile\n";
-
   #Create Makefile.conf for mysqlEmb Makefile.PL
   create_makefile(Data::Dumper->Dump([\%e], ["o"]));
 
 }
 
-if (eval $ExtUtils::MakeMaker::VERSION >= 5.43) {
+if ($ExtUtils::MakeMaker::VERSION >= 5.43) {
   $o{'CAPI'} = 'TRUE'
-    if (eval $ExtUtils::MakeMaker::VERSION >= 5.43
+    if ($ExtUtils::MakeMaker::VERSION >= 5.43
 	&&  $Config::Config{'archname'} =~ /-object\b/i);
-  $o{'AUTHOR'} = 'Patrick Galbraith <patg@patg.net>';
+  $o{'AUTHOR'} = 'Rudy Lippan <rlippan@remotelinux.com>';
   $o{'ABSTRACT'} =
     'A MySQL driver for the Perl5 Database Interface (DBI)';
-  $o{'PREREQ_PM'} = { 'DBI' => 1.609 };
-  %o=(%o,
-    LICENSE => 'perl',
-    MIN_PERL_VERSION => '5.008001',
-    META_MERGE => {
-      resources => {
-        repository => 'https://github.com/perl5-dbi/DBD-mysql',
-        MailingList => 'mailto:dbi-dev@perl.org',
-        license     => 'http://dev.perl.org/licenses/',
-        homepage    => 'http://dbi.perl.org/',
-        IRC         => 'irc://irc.perl.org/#dbi',
-      },
-      x_contributors => [
-        # a list of our awesome contributors generated from git
-        # using the command:
-        # git shortlog -se | cut  -f2- | sed "s/^/        '/;s/$/',/"
-
-        'Alexandr Ciornii <alexchorny@gmail.com>',
-        'Alexey Molchanov <alexey.molchanov@portaone.com>',
-        'Amiri Barksdale at Home <amiri@roosterpirates.com>',
-        'Aran Deltac <bluefeet@gmail.com>',
-        'Bernt M. Johnsen <bernt.johnsen@oracle.com>',
-        'Chase Whitener <chase.whitener@infotechfl.com>',
-        'Chip Salzenberg <chip@topsy.com>',
-        'Chris Hammond <chrishammond@ymail.com>',
-        'Chris Weyl <cweyl@alumni.drew.edu>',
-        'Christian Walde <walde.christian@googlemail.com>',
-        'Dagfinn Ilmari Mannsåker <ilmari@ilmari.org>',
-        'Daisuke Murase <typester@cpan.org>',
-        'Damyan Ivanov <dmn@debian.org>',
-        'Daniël van Eeden <daniel.vaneeden@booking.com>',
-        'David Farrell <davidnmfarrell@gmail.com>',
-        'David Steinbrunner <dsteinbrunner@pobox.com>',
-        'Giovanni Bechis <giovanni@bigio.snb.it>',
-        'Graham Ollis <plicease@cpan.org>',
-        'Hanno <hanno@gentoo.org>',
-        'Jim Winstead <jimw@trainedmonkey.com>',
-        'Juergen Weigert <jw@suse.com>',
-        'Kenny Gryp <kenny.gryp@percona.com>',
-        'Lu Shengliang <lushl9301@gmail.com>',
-        'Masahiro Chiba <chiba@everqueue.com>',
-        'Matthew Horsfall (alh) <WolfSage@gmail.com>',
-        'Michiel Beijen <michiel.beijen@gmail.com>',
-        'Mike Pomraning <mjp@pilcrow.madison.wi.us>',
-        'Patrick Galbraith <patg@patg.net>',
-        'Perlover <perlover@perlover.com>',
-        'Reini Urban <rurban@cpanel.net>',
-        'Rob Hoelz <rhoelz@inoc.com>',
-        'Rob Van Dam <rvandam00@gmail.com>',
-        'Rudy Lippan <rlippan@remotelinux.com>',
-        'Scimon <simon.proctor@gmail.com>',
-        'Sergey Zhuravlev <zhurs@ya.ru>',
-        'Sergiy Borodych <Sergiy.Borodych@gmail.com>',
-        'Sharif Nassar <mrwacky42+github@gmail.com>',
-        'Steffen Mueller <smueller@cpan.org>',
-        'Steven Hartland <steven.hartland@multiplay.co.uk>',
-        'Taro Kobayashi <9re.3000@gmail.com>',
-        'Tim Mullin <tim@cpanel.net>',
-        'katyavoid <katyavoid@gmail.com>',
-        'tokuhirom <tokuhirom@gmail.com>',
-        'zefram <zefram@fysh.org>',
-        'zentooo <ankerasoy@gmail.com>',
-      ],
-    },
-    TEST_REQUIRES => { 'Test::Simple' => '0.90',
-                       'Test::Deep'   => 0,
-    },
-    CONFIGURE_REQUIRES => {'Data::Dumper' => 0},
-  );
+  $o{'PREREQ_PM'} = { 'DBI' => 1.08,
+		      'Data::Dumper' => 0 };
 }
 
-WriteMakefile1(%o);
+ExtUtils::MakeMaker::WriteMakefile(%o);
 exit 0;
 
 
@@ -448,10 +386,9 @@ Possible options are:
   --libs=<libs>          Use <libs> for running the linker; defaults
                          to the value of "mysql_config --libs" or a gussed
                          value
-  --force-embedded       Build version of driver supporting mysqlEmb
-  --embedded=<libs>      Use these libs when building the embedded version of
-                         DBD (with --force-embedded). Defaults to the value of
-                         "mysql_config --embedded".
+  --embedded=<libs>      Build embedded version of DBD and use <libs> for this;
+                         defaults to the value of "mysql_config --embedded" 
+                         (default: off)
   --testdb=<db>          Use the database <db> for running the test suite;
                          defaults to $TESTDB
   --testuser=<user>      Use the username <user> for running the test suite;
@@ -464,20 +401,17 @@ Possible options are:
                          by default the port number is choosen from the
                          mysqlclient library
   --mysql_config=<path>  Specify <path> for mysql_config script
-  --with-mysql=<path>    Specify <path> for the root of the MySQL installation.
+                         (Not supported on Win32)
   --nocatchstderr        Supress using the "myld" script that redirects
                          STDERR while running the linker.
   --nofoundrows          Change the behavior of \$sth->rows() so that it
-  			 returns the number of rows physically modified
+  			 returns the number of rows physically modified 
 			 instead of the rows matched
   --ps-protocol          Toggle the use of driver emulated prepared statements
                          prepare, requires MySQL server >= 4.1.3 for
-                         server side prepared statements, off by default
-  --bind-type-guessing   Toggle the use of driver attribute mysql_bind_type_guessing
-                         This feature makes it so driver-emulated prepared statements
-                         try to "guess" if a value being bound is numeric, in which
-                         case, quotes will not be put around the value.
-  --nossl                Disable SSL support
+                         server side prepared statements, off by default 
+  --force-embedded       Force to build embedded version of driver
+  --ssl			 Enable SSL support
   --help                 Print this message and exit
 
 All options may be configured on the command line. If they are
@@ -489,7 +423,7 @@ it can be found):
   mysql_config --embedded
   mysql_config --testdb
 
-and so on. See DBD::mysql::INSTALL for details.
+and so on. See the INSTALL.html file for details.
 USAGE
   exit 1;
 }
@@ -507,199 +441,176 @@ USAGE
 #
 ############################################################################
 
-sub Configure {
-    my($opt, $source, $param) = @_;
-    if ($param eq 'bind-type-guessing') {
-        $source->{$param}= ($opt->{$param}) ? "User's choice" : 'default';
-        return;
-    }
-    if ($param eq 'ps-protocol') {
-        $source->{$param}= ($opt->{$param}) ? "User's choice" : 'default';
-        return;
-    }
-    if (exists($opt->{$param})) {
-        $source->{$param} = "User's choice";
-        return;
-    }
+sub Configure
+{
+  my($opt, $source, $param) = @_;
 
+  if ($param eq 'ps-protocol')
+  {
+      $source->{$param}= ($opt->{$param}) ? "User's choice" : 'default';
+      return;
+  }
+  if (exists($opt->{$param}))
+  {
+    $source->{$param} = "User's choice";
+    return;
+  }
+
+  if ($^O !~ /mswin32/i)
+  {
     # First try to get options values from mysql_config
-    my @mysql_config_options = qw(
-      cflags include libs libs_r plugindir socket port version libmysqld-libs
-    );
-    if ( grep {$_ eq $param} @mysql_config_options ) {
-        my $command = $opt->{'mysql_config'} . " --$param";
-        eval
-        {
-            open(PIPE, "$command |") or die "Can't find mysql_config.";
-        };
+    my $command = $opt->{'mysql_config'} . " --$param";
+    eval 
+    {
+      open(PIPE, "$command |") or die "Can't find mysql_config.";
+    };
 
-        if (!$@) {
-            my $str = "";
-            while (defined(my $line = <PIPE>)) { $str .= $line; }
+    if (!$@)
+    {
+      my $str = "";
+      while (defined(my $line = <PIPE>)) 
+      {
+      $str .= $line;
+      }
+      if ($str ne ""  &&  $str !~ /Options:/) 
+      {
+        $str =~ s/\s+$//s;
+        $str =~ s/^\s+//s;
 
-            if ($str ne ""  &&  $str !~ /Options:/) {
-                $str =~ s/\s+$//s;
-                $str =~ s/^\s+//s;
+        # Unfortunately ExtUtils::MakeMaker doesn't deal very well
+        # with -L'...'
+        $str =~ s/\-L\'(.*?)\'/-L$1/sg;
+        $str =~ s/\-L\"(.*?)\"/-L$1/sg;
 
-                # Unfortunately ExtUtils::MakeMaker doesn't deal very well
-                # with -L'...'
-                $str =~ s/\-L\'(.*?)\'/-L$1/sg;
-                $str =~ s/\-L\"(.*?)\"/-L$1/sg;
-
-                # Separate libs from ldflags
-                if ($param eq 'libs') {
-                    my (@libs, @ldflags);
-                    for (split ' ', $str) {
-                        if (/^-[Ll]/) { push @libs, $_ }
-                        else          { push @ldflags, $_ }
-                    }
-                    $str = "@libs";
-                    $opt->{ldflags} = "@ldflags";
-                    $source->{ldflags} = "mysql_config";
-                }
-
-                $opt->{$param} = $str;
-                $source->{$param} = "mysql_config";
-                return;
-            }
-        }
-        else {
-            print "Can't find mysql_config. Use --mysql_config option to specify where mysql_config is located\n";
-        }
-    }
-
-    # Ok, mysql_config doesn't work. We need to do our best
-    # First check environment variables
-    if (defined($ENV{'DBD_MYSQL_'.uc($param)})) {
-        $opt->{$param} = $ENV{'DBD_MYSQL_'.uc($param)};
-        $source->{$param} = 'environment';
-    }
-
-    # Then try to guess
-    unless ($opt->{$param}) {
-      if ($param eq 'testuser') {
-        my $user = $ENV{USER} || '';
-        print "
-
-PLEASE NOTE:
-
-For 'make test' to run properly, you must ensure that the
-database user '$user' can connect to your MySQL server
-and has the proper privileges that these tests require such
-as 'drop table', 'create table', 'drop procedure', 'create procedure'
-as well as others.
-
-mysql> grant all privileges on test.* to '$user'\@'localhost' identified by 's3kr1t';
-
-You can also optionally set the user to run 'make test' with:
-
-perl Makefile.PL --testuser=username
-
-";
-      $opt->{$param} = $user;
-	  $source->{$param} = 'guessed';
-    }
-    elsif ($param eq "nocatchstderr" || $param eq "nofoundrows") {
-      $source->{$param} = "default";
-      $opt->{$param} = 0;
-    }
-    elsif ($param eq "testdb") {
-      $source->{$param} = "default";
-      $opt->{$param} = $TESTDB;
-    }
-    elsif ($param eq "testhost" || $param eq "testport"  ||
-        $param eq "testpassword" || $param eq "testsocket" ) {
-      $source->{$param} = "default";
-      $opt->{$param} = "";
-    }
-    elsif($param eq 'force-embedded') {
-      $source->{$param} = $opt->{$param} ? "default" : 'not set';
-    }
-    elsif ($param eq "cflags") {
-      $source->{$param} = "guessed";
-      my $dir = SearchFor('include', 'mysql.h');
-      if ($dir) {
-        $opt->{$param} = "-I$dir";
+        $opt->{$param} = $str;
+        $source->{$param} = "mysql_config";
         return;
       }
-      die <<"MSG";
+    }
+    else
+    {
+      #print "Can't find mysql_config. Use --mysql_config option to specify where mysql_config is located\n";
+    }
+  }
+
+  # Ok, mysql_config doesn't work. We need to do our best
+  if ($param eq "nocatchstderr" || $param eq "nofoundrows")
+  {
+    $source->{$param} = "default";
+    $opt->{$param} = 0;
+  }
+  elsif ($param eq "testdb") 
+  {
+    $source->{$param} = "default";
+    $opt->{$param} = $TESTDB;
+  }
+  elsif ($param eq "testhost"  ||  $param eq "testuser"  ||
+         $param eq "testport"  ||  $param eq "testpassword" || 
+         $param eq "testsocket" 
+         )
+  {
+    $source->{$param} = "default";
+    $opt->{$param} = "";
+  }
+  elsif($param eq 'force-embedded')
+  {
+    $source->{$param} = $opt->{$param} ? "default" : 'not set';
+  }
+  elsif ($param eq "cflags") 
+  {
+    $source->{$param} = "guessed";
+    my $dir = SearchFor('include', 'mysql.h');
+    if ($dir) {
+      $opt->{$param} = "-I$dir";
+      return;
+    }
+    die <<"MSG";
 Failed to determine directory of mysql.h. Use
 
   perl Makefile.PL --cflags=-I<dir>
 
-to set this directory. For details see DBD::mysql::INSTALL,
+to set this directory. For details see the INSTALL.html file,
 section "C Compiler flags" or type
 
   perl Makefile.PL --help
 MSG
+  }
+  elsif ($param eq "libs" || $param eq "embedded") 
+  {
+    $source->{$param} = "guessed";
+
+    if ($param eq "embedded" && !$opt->{'embedded'})
+    {
+      $opt->{$param}="";
+      return;
     }
-    elsif ($param eq "libs" || $param eq "embedded") {
-      $source->{$param} = "guessed";
 
-      if ($param eq "embedded" && !$opt->{'embedded'}) {
-        $opt->{$param}="";
-        return;
-      }
+    my @files=();
+    my $default_libs;
+    if ($param eq "embedded")
+    {
+      $default_libs= "-lmysqld -lpthread -lz -lm -lcrypt -lnsl";
+      @files = ($^O =~ /mswin32/i) ? qw(mysqlclient.lib) :
+			qw(libmysqld.a);
+    }
+    else
+    {
+      $default_libs= "-lmysqlclient -lz -lm -lcrypt -lnsl";
+      @files = ($^O =~ /mswin32/i) ? qw(mysqlclient.lib) :
+			qw(libmysqlclient.a libmysqlclient.so);
+    }
 
-      my @files=();
-      my $default_libs;
-      if ($param eq "embedded") {
-        $default_libs= "-lmysqld -lpthread -lz -lm -lcrypt -lnsl";
-        @files = ($^O =~ /mswin32/i) ? qw(mysqlclient.lib) :
-		  	qw(libmysqld.a);
-      }
-      else {
-        $default_libs= "-lmysqlclient -lz -lm -lcrypt -lnsl";
-        @files = ($^O =~ /mswin32/i) ? qw(mysqlclient.lib) :
-	  		qw(libmysqlclient.a libmysqlclient.so);
-      }
+    my $dir = SearchFor('lib', @files);
 
-      my $dir = SearchFor('lib', @files);
-
-      if ($dir) {
-          $opt->{$param} = "-L$dir $default_libs";
-        return;
-      }
-      my $f = join("|", @files);
-      die <<"MSG";
+    if ($dir) {
+        $opt->{$param} = "-L$dir $default_libs";
+      return;
+    }
+    my $f = join("|", @files);
+    die <<"MSG";
 Failed to determine directory of $f. Use
 
   perl Makefile.PL "--$param=-L<dir> $default_libs"
 
-to set this directory. For details see the DBD::mysql::INSTALL,
+to set this directory. For details see the INSTALL.html file,
 section "Linker flags" or type
 
   perl Makefile.PL --help
 MSG
-    }
-    elsif ($param eq "nossl") {
-      $opt->{$param} = ($opt->{"libs"} =~ /ssl/) ? 1 : 0;
-      $source->{$param} = $opt->{$param} ? "choice" : "default";
-    }
-    elsif ($param eq "ssl") {
-        # default, for legacy reasons
-    }
-    else {
-      die "Unknown configuration parameter: $param";
-    }
+  } 
+  elsif ($param eq "ssl") 
+  {
+    $opt->{$param} = ($opt->{"libs"} =~ /ssl/) ? 1 : 0;
+    $source->{$param} = "guessed";
+  } 
+  else 
+  {
+    die "Unknown configuration parameter: $param";
   }
 }
 
+my $haveFileSpec;
 my $fineDir;
 sub SearchFor {
   my($subdir, @files) = @_;
+  $haveFileSpec = eval { require File::Spec } unless defined($haveFileSpec);
 
-  my @dirs = ($^O eq 'MSWin32') ? qw(C:) : qw(/usr/local /usr /opt);
+  my @dirs = ($^O =~ /mswin32/i) ? qw(C:) : qw(/usr/local /usr /opt);
   unshift(@dirs, $fineDir) if defined($fineDir);
 
-  for my $f (@files) {
-    for my $dir (@dirs) {
-      my $try1 = File::Spec->catdir($dir, $subdir);
-      my $try2 = File::Spec->catdir($dir, "mysql");
-      my $try3 = File::Spec->catdir($try1, "mysql");
-      my $try4 = File::Spec->catdir($try2, $subdir);
-      for my $path ($try3, $try4, $try2, $try1, $dir) {
-	my $file = File::Spec->catfile($path, $f);
+  foreach my $f (@files) {
+    foreach my $dir (@dirs) {
+      my $try1 = $haveFileSpec ?
+	File::Spec->catdir($dir, $subdir) : "$dir/$subdir";
+      my $try2 = $haveFileSpec ?
+	File::Spec->catdir($dir, "mysql") : "$dir/mysql";
+      my $try3 = $haveFileSpec ?
+	File::Spec->catdir($try1, "mysql") : "$try1/mysql";
+      my $try4 = $haveFileSpec ?
+	File::Spec->catdir($try2, $subdir) : "$try2/$subdir";
+      foreach my $path ($try3, $try4, $try2, $try1, $dir) {
+	my $file = $haveFileSpec ?
+	  File::Spec->catfile($path, $f) : "$path/$f";
 	if (-f $file) {
 	  $fineDir = $dir;
 	  return $path;
@@ -712,11 +623,12 @@ sub SearchFor {
 sub SearchFor2 {
   my($files, $dirs) = @_;
 
-  for my $f (@{$files})
+  foreach my $f (@{$files}) 
   {
-    for my $dir (@{$dirs})
+    foreach my $dir (@{$dirs}) 
     {
-      if (-f File::Spec->catfile($dir, $f))
+      my $file = $haveFileSpec ?  File::Spec->catfile($dir, $f) : "$dir/$f";
+      if (-f $file) 
       {
         $fineDir = $dir;
         return $dir;
@@ -727,7 +639,7 @@ sub SearchFor2 {
 
 
 sub check_include_version {
-
+  
   my ($dir, $ver) = @_;
 
   my $headerfile;
@@ -761,7 +673,7 @@ sub replace
 {
   my ($str, $ref)=@_;
 
-  for my $find (keys %{$ref})
+  foreach my $find (keys %{$ref})
   {
     $str =~ s/$find/$ref->{$find}/g;
   }
@@ -774,7 +686,7 @@ sub prepare_files
   my $line;
   my @lib;
 
-  for my $file (keys %{$files})
+  foreach my $file (keys %{$files})
   {
 
     if ($files->{$file}->{makedir})
@@ -838,88 +750,4 @@ sub dynamic_lib {
     $result =~ s/(\$\(LD\))/\$\(PERL\) myld \$(LD)/sg;
   }
   return $result;
-}
-
-package main;
-
-
-
-sub WriteMakefile1 {  #Written by Alexandr Ciornii, version 0.21. Added by eumm-upgrade.
-  my %params=@_;
-  my $eumm_version=$ExtUtils::MakeMaker::VERSION;
-  $eumm_version=eval $eumm_version;
-  die "EXTRA_META is deprecated" if exists $params{EXTRA_META};
-  die "License not specified" if not exists $params{LICENSE};
-  if ($params{BUILD_REQUIRES} and $eumm_version < 6.5503) {
-    #EUMM 6.5502 has problems with BUILD_REQUIRES
-    $params{PREREQ_PM}={ %{$params{PREREQ_PM} || {}} , %{$params{BUILD_REQUIRES}} };
-    delete $params{BUILD_REQUIRES};
-  }
-  delete $params{CONFIGURE_REQUIRES} if $eumm_version < 6.52;
-  delete $params{MIN_PERL_VERSION} if $eumm_version < 6.48;
-  delete $params{META_MERGE} if $eumm_version < 6.46;
-  delete $params{META_ADD} if $eumm_version < 6.46;
-  delete $params{LICENSE} if $eumm_version < 6.31;
-  delete $params{AUTHOR} if $] < 5.005;
-  delete $params{ABSTRACT_FROM} if $] < 5.005;
-  delete $params{BINARY_LOCATION} if $] < 5.005;
-
-  ExtUtils::MakeMaker::WriteMakefile(%params);
-}
-__DATA__
-
-my %opts = ();
-GetOptions(\%opts,
-           'cflags',
-           'libs',
-           'port',
-           'version',
-           'libmysqld-libs',
-           'embedded',
-           'embedded-libs',
-           'help',
-          ) or usage();
-
-usage() if ($opts{help} or not %opts);
-
-SWITCH : {
-  local $\ = "\n";
-  $opts{cflags} and do {
-    print $cflags;
-    last SWITCH;
-  };
-  $opts{libs} and do {
-    print $libs;
-    last SWITCH;
-  };
-  $opts{port} and do {
-    print $port;
-    last SWITCH;
-  };
-  $opts{version} and do {
-    print $version;
-    last SWITCH;
-  };
-  ($opts{'libmysqld-libs'} or $opts{embedded} or $opts{'libmysqld-libs'} )
-    and do {
-      print $embedded_libs;
-      last SWITCH;
-    };
-  usage();
-}
-
-exit(0);
-
-sub usage {
-  print << "EOU";
-Usage: $0 [OPTIONS]
-
-Options:
-        --cflags         [$cflags]
-        --libs           [$libs]
-        --port           [$port]
-        --version        [$version]
-	--libmysqld-libs [$embedded_libs]
-EOU
-    exit(1);
 }

@@ -11,27 +11,17 @@
  *
  *  You may distribute this under the terms of either the GNU General Public
  *  License or the Artistic License, as specified in the Perl README file.
+ *
+ *  $Id: dbdimp.h 9284 2007-03-20 13:47:18Z capttofu $
  */
 
-#define PERL_NO_GET_CONTEXT
 /*
  *  Header files we use
  */
 #include <DBIXS.h>  /* installed by the DBI module                        */
 #include <mysql.h>  /* Comes with MySQL-devel */
 #include <mysqld_error.h>  /* Comes MySQL */
-
 #include <errmsg.h> /* Comes with MySQL-devel */
-
-/* For now, we hardcode this, but in the future,
- * we can detect capabilities of the MySQL libraries
- * we're talking to */
-#if defined(__WIN__)
-#define MYSQL_ASYNC 0
-#else
-#define MYSQL_ASYNC 1
-#endif
-
 
 /*
  * This is the version of MySQL wherer
@@ -39,12 +29,10 @@
  * statements as opposed to emulation in the driver
 */
 #define SQL_STATE_VERSION 40101
-#define WARNING_COUNT_VERSION 40101
 #define FIELD_CHARSETNR_VERSION 40101 /* should equivalent to 4.1.0  */
 #define MULTIPLE_RESULT_SET_VERSION 40102
 #define SERVER_PREPARE_VERSION 40103
-#define CALL_PLACEHOLDER_VERSION 50503
-#define LIMIT_PLACEHOLDER_VERSION 50007
+#define LIMIT_PLACEHOLDER_VERSION 50100
 #define GEO_DATATYPE_VERSION 50007
 #define NEW_DATATYPE_VERSION 50003
 #define SSL_VERIFY_VERSION 50023
@@ -54,28 +42,7 @@
 #define mysql_sqlstate(svsock) (NULL)
 #endif
 
-/*
- * This is the version of libmysql that starts to support
- * MySQL Fabric.
-*/
-#define LIBMYSQL_FABRIC_VERSION 60200
 
-#if LIBMYSQL_VERSION_ID >= LIBMYSQL_FABRIC_VERSION
-#define FABRIC_SUPPORT 1
-#else
-#define FABRIC_SUPPORT 0
-#endif
-
-#if MYSQL_VERSION_ID < WARNING_COUNT_VERSION
-#define mysql_warning_count(svsock) 0
-#endif
-
-#if MYSQL_VERSION_ID < WARNING_COUNT_VERSION
-#define mysql_warning_count(svsock) 0
-#endif
-
-#define true 1
-#define false 0
 
 /*
  *  The following are return codes passed in $h->err in case of
@@ -169,30 +136,27 @@ struct imp_drh_st {
 struct imp_dbh_st {
     dbih_dbc_t com;         /*  MUST be first element in structure   */
 
-    MYSQL *pmysql;
-    bool has_transactions;   /*  boolean indicating support for
-			     *  transactions, currently always  TRUE for MySQL
+    MYSQL mysql;
+    int has_transactions;   /*  boolean indicating support for
+			     *  transactions, currently always
+			     *  TRUE for MySQL and always FALSE
+			     *  for mSQL.
 			     */
     bool auto_reconnect;
-    bool bind_type_guessing;
-    bool bind_comment_placeholders;
-    bool no_autocommit_cmd;
-    bool use_mysql_use_result; /* TRUE if execute should use
-                               * mysql_use_result rather than
-                               * mysql_store_result
-                               */
-    bool use_server_side_prepare;
-#if MYSQL_ASYNC
-    void* async_query_in_flight;
-#endif
-#if defined(sv_utf8_decode) && MYSQL_VERSION_ID >=SERVER_PREPARE_VERSION
-    bool enable_utf8;
-    bool enable_utf8mb4;
-#endif
     struct {
 	    unsigned int auto_reconnects_ok;
 	    unsigned int auto_reconnects_failed;
     } stats;
+    unsigned short int  bind_type_guessing;
+    int use_mysql_use_result; /* TRUE if execute should use
+                               * mysql_use_result rather than
+                               * mysql_store_result
+                               */
+    int use_server_side_prepare;
+    int has_autodetect_prepare;
+#if defined(sv_utf8_decode) && MYSQL_VERSION_ID >=SERVER_PREPARE_VERSION
+    bool enable_utf8;
+#endif
 };
 
 
@@ -229,14 +193,10 @@ typedef struct imp_sth_phb_st {
 typedef struct imp_sth_fbh_st {
     unsigned long  length;
     bool           is_null;
-    bool           error;
     char           *data;
     int            charsetnr;
     double         ddata;
     long           ldata;
-#if MYSQL_VERSION_ID < FIELD_CHARSETNR_VERSION 
-    unsigned int   flags;
-#endif
 } imp_sth_fbh_t;
 
 
@@ -284,10 +244,6 @@ struct imp_sth_st {
     int   use_mysql_use_result;  /*  TRUE if execute should use     */
                           /* mysql_use_result rather than           */
                           /* mysql_store_result */
-
-#if MYSQL_ASYNC
-    bool is_async;
-#endif
 };
 
 
@@ -354,10 +310,6 @@ my_ulonglong mysql_st_internal_execute41(SV *,
 int mysql_st_clean_cursor(SV*, imp_sth_t*);
 #endif
 
-#if MYSQL_VERSION_ID >= MULTIPLE_RESULT_SET_VERSION
-int mysql_st_next_results(SV*, imp_sth_t*);
-#endif
-
 #if defined(DBD_MYSQL_EMBEDDED)
 int count_embedded_options(char *);
 char ** fill_out_embedded_options(char *, int , int , int );
@@ -374,7 +326,3 @@ extern MYSQL* mysql_dr_connect(SV*, MYSQL*, char*, char*, char*, char*, char*,
 
 extern int mysql_db_reconnect(SV*);
 int mysql_st_free_result_sets (SV * sth, imp_sth_t * imp_sth);
-#if MYSQL_ASYNC
-int mysql_db_async_result(SV* h, MYSQL_RES** resp);
-int mysql_db_async_ready(SV* h);
-#endif

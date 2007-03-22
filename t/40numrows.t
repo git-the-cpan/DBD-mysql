@@ -1,83 +1,158 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40numrows.t 8435 2006-12-23 19:03:49Z capttofu $
+#
+#   This tests, whether the number of rows can be retrieved.
+#
 
+
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+
+
+#
+#   Include lib.pl
+#
 use DBI;
-use Test::More;
-use vars qw($test_dsn $test_user $test_password);
-use lib 't', '.';
-require 'lib.pl';
-
-my ($dbh, $sth, $aref);
-eval {$dbh= DBI->connect($test_dsn, $test_user, $test_password,
-                      { RaiseError => 1, PrintError => 1, AutoCommit => 0 });};
-if ($@) {
-    plan skip_all => "no database connection";
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl", "DBD-mysql/t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
 }
-plan tests => 30;
 
-ok $dbh->do("DROP TABLE IF EXISTS dbd_mysql_t40numrows");
+sub ServerError() {
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
+}
 
-my $create= <<EOT;
-CREATE TABLE dbd_mysql_t40numrows (
-  id INT(4) NOT NULL DEFAULT 0,
-  name varchar(64) NOT NULL DEFAULT ''
-)
-EOT
 
-ok $dbh->do($create), "CREATE TABLE dbd_mysql_t40numrows";
+sub TrueRows($) {
+    my ($sth) = @_;
+    my $count = 0;
+    while ($sth->fetchrow_arrayref) {
+	++$count;
+    }
+    $count;
+}
 
-ok $dbh->do("INSERT INTO dbd_mysql_t40numrows VALUES( 1, 'Alligator Descartes' )"), 'inserting first row';
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40numrows WHERE id = 1"));
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or ($dbh = DBI->connect($test_dsn, $test_user,
+					$test_password)))
+	or ServerError();
 
-ok $sth->execute;
+    #
+    #   Find a possible new table name
+    #
+    Test($state or ($table = FindNewTable($dbh)))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-is $sth->rows, 1, '\$sth->rows should be 1';
+    #
+    #   Create a new table; EDIT THIS!
+    #
+    Test($state or ($def = TableDefinition($table,
+					   ["id",   "INTEGER",  4, 0],
+					   ["name", "CHAR",    64, 0]),
+		    $dbh->do($def)))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($aref= $sth->fetchall_arrayref);
 
-is scalar @$aref, 1, 'Verified rows should be 1';
+    #
+    #   This section should exercise the sth->rows
+    #   method by preparing a statement, then finding the
+    #   number of rows within it.
+    #   Prior to execution, this should fail. After execution, the
+    #   number of rows affected by the statement will be returned.
+    #
+    Test($state or $dbh->do("INSERT INTO $table"
+			    . " VALUES( 1, 'Alligator Descartes' )"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->finish;
+    Test($state or ($sth = $dbh->prepare("SELECT * FROM $table"
+					   . " WHERE id = 1")))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $dbh->do("INSERT INTO dbd_mysql_t40numrows VALUES( 2, 'Jochen Wiedmann' )"), 'inserting second row';
+    Test($state or $sth->execute)
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40numrows WHERE id >= 1"));
+    Test($state or ($numrows = $sth->rows) == 1  or  ($numrows == -1))
+	or ErrMsgF("Expected 1 rows, got %s.\n", $numrows);
 
-ok $sth->execute;
+    Test($state or ($numrows = TrueRows($sth)) == 1)
+	or ErrMsgF("Expected to fetch 1 rows, got %s.\n", $numrows);
 
-is $sth->rows, 2, '\$sth->rows should be 2';
+    Test($state or $sth->finish)
+           or DbiError($dbh->err, $dbh->errstr);
 
-ok ($aref= $sth->fetchall_arrayref);
+    Test($state or undef $sth or 1);
 
-is scalar @$aref, 2, 'Verified rows should be 2';
+    Test($state or $dbh->do("INSERT INTO $table"
+			    . " VALUES( 2, 'Jochen Wiedmann' )"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->finish;
+    Test($state or ($sth = $dbh->prepare("SELECT * FROM $table"
+					    . " WHERE id >= 1")))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $dbh->do("INSERT INTO dbd_mysql_t40numrows VALUES(3, 'Tim Bunce')"), "inserting third row";
+    Test($state or $sth->execute)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40numrows WHERE id >= 2"));
+    Test($state or ($numrows = $sth->rows) == 2  or  ($numrows == -1))
+	or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
 
-ok $sth->execute;
+    Test($state or ($numrows = TrueRows($sth)) == 2)
+	or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
 
-is $sth->rows, 2, 'rows should be 2';
+    Test($state or $sth->finish)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($aref= $sth->fetchall_arrayref);
+    Test($state or undef $sth or 1);
 
-is scalar @$aref, 2, 'Verified rows should be 2';
+    Test($state or $dbh->do("INSERT INTO $table"
+			    . " VALUES(3, 'Tim Bunce')"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->finish;
+    Test($state or ($sth = $dbh->prepare("SELECT * FROM $table"
+					    . " WHERE id >= 2")))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok ($sth = $dbh->prepare("SELECT * FROM dbd_mysql_t40numrows"));
+    Test($state or $sth->execute)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $sth->execute;
+    Test($state or ($numrows = $sth->rows) == 2  or  ($numrows == -1))
+	or ErrMsgF("Expected 2 rows, got %s.\n", $numrows);
 
-is $sth->rows, 3, 'rows should be 3';
+    Test($state or ($numrows = TrueRows($sth)) == 2)
+	or ErrMsgF("Expected to fetch 2 rows, got %s.\n", $numrows);
 
-ok ($aref= $sth->fetchall_arrayref);
+    Test($state or $sth->finish)
+	   or DbiError($dbh->err, $dbh->errstr);
 
-is scalar @$aref, 3, 'Verified rows should be 3';
+    Test($state or undef $sth or 1);
 
-ok $dbh->do("DROP TABLE dbd_mysql_t40numrows"), "drop table dbd_mysql_t40numrows";
+    #
+    #   Finally drop the test table.
+    #
+    Test($state or $dbh->do("DROP TABLE $table"))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-ok $dbh->disconnect;
+}

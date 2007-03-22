@@ -1,23 +1,30 @@
+# -*- perl -*-
+
 package Bundle::DBD::mysql;
 
-use strict;
-use warnings;
-use DBD::mysql;
-our $VERSION = $DBD::mysql::VERSION;
+$VERSION = '4.004';
 
 1;
 
 __END__
 
-=pod
-
 =head1 NAME
 
-Bundle::DBD::mysql
+Bundle::DBD::mysql - A bundle to install Perl drivers for MySQL
+
+=head1 SYNOPSIS
+
+C<perl -MCPAN -e 'install Bundle::DBD::mysql'>
+
+=head1 CONTENTS
+
+DBI
+
+DBD::mysql
 
 =head1 DESCRIPTION
 
-This package only exists for legacy reasons. Please use the L<DBD::mysql>
-package instead.
+This bundle includes all that is needed to connect with a MySQL server using
+DBI.
 
 =cut

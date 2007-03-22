@@ -1,106 +1,161 @@
-use strict;
-use warnings;
+#!/usr/local/bin/perl
+#
+#   $Id: 40listfields.t 9183 2007-03-01 15:47:39Z capttofu $
+#
+#   This is a test for statement attributes being present appropriately.
+#
 
+
+#
+#   Make -w happy
+#
+$test_dsn = '';
+$test_user = '';
+$test_password = '';
+$COL_KEY = '';
+
+
+#
+#   Include lib.pl
+#
 use DBI;
-use Test::More;
-use vars qw($COL_NULLABLE $test_dsn $test_user $test_password);
-use lib '.', 't';
-require 'lib.pl';
+use vars qw($verbose);
 
-use vars qw($test_dsn $test_user $test_password);
-my $quoted;
-
-my $create;
-
-my $dbh;
-eval {$dbh= DBI->connect($test_dsn, $test_user, $test_password,
-                      { RaiseError => 1, PrintError => 1, AutoCommit => 0 });};
-
-if ($@) {
-    plan skip_all => "no database connection";
-}
-plan tests => 25;
-
-$dbh->{mysql_server_prepare}= 0;
-
-$create = <<EOC;
-CREATE TEMPORARY TABLE dbd_mysql_40listfields (
-    id INT(4) NOT NULL,
-    name VARCHAR(64),
-    key id (id)
-    )
-EOC
-
-ok $dbh->do($create), "create table dbd_mysql_40listfields";
-
-ok $dbh->table_info(undef,undef,'dbd_mysql_40listfields'), "table info for dbd_mysql_40listfields";
-
-ok $dbh->column_info(undef,undef,'dbd_mysql_40listfields','%'), "column_info for dbd_mysql_40listfields";
-
-my $sth= $dbh->column_info(undef,undef,"this_does_not_exist",'%');
-
-ok $sth, "\$sth defined";
-
-ok !$sth->err(), "not error";
-
-$sth = $dbh->prepare("SELECT * FROM dbd_mysql_40listfields");
-
-ok $sth, "prepare succeeded";
-
-ok $sth->execute, "execute select";
-
-my $res;
-$res = $sth->{'NUM_OF_FIELDS'};
-
-ok $res, "$sth->{NUM_OF_FIELDS} defined";
-
-is $res, 2, "\$res $res == 2";
-
-my $ref = $sth->{'NAME'};
-
-ok $ref, "\$sth->{NAME} defined";
-
-cmp_ok $$ref[0], 'eq', 'id', "$$ref[0] eq 'id'";
-
-cmp_ok $$ref[1], 'eq', 'name', "$$ref[1] eq 'name'";
-
-$ref = $sth->{'NULLABLE'};
-
-ok $ref, "nullable";
-
-ok !($$ref[0] xor (0 & $COL_NULLABLE));
-ok !($$ref[1] xor (1 & $COL_NULLABLE));
-
-$ref = $sth->{TYPE};
-
-cmp_ok $ref->[0], 'eq', DBI::SQL_INTEGER(), "SQL_INTEGER";
-
-cmp_ok $ref->[1], 'eq', DBI::SQL_VARCHAR(), "SQL_VARCHAR";
-
-$sth = $dbh->prepare("SELECT * FROM dbd_mysql_40listfields");
-if (!$sth) {
-    die "Error:" . $dbh->errstr . "\n";
-}
-if (!$sth->execute) {
-    die "Error:" . $sth->errstr . "\n";
+$mdriver = "";
+foreach $file ("lib.pl", "t/lib.pl") {
+    do $file; if ($@) { print STDERR "Error while executing lib.pl: $@\n";
+			   exit 10;
+		      }
+    if ($mdriver ne '') {
+	last;
+    }
 }
 
-ok ($sth= $dbh->prepare("DROP TABLE dbd_mysql_40listfields"));
 
-ok($sth->execute);
+@table_def = (
+	      ["id",   "INTEGER",  4, $COL_KEY],
+	      ["name", "CHAR",    64, $COL_NULLABLE]
+	     );
 
-ok (! defined $sth->{'NUM_OF_FIELDS'});
+sub ServerError() {
+    print STDERR ("Cannot connect: ", $DBI::errstr, "\n",
+	"\tEither your server is not up and running or you have no\n",
+	"\tpermissions for acessing the DSN $test_dsn.\n",
+	"\tThis test requires a running server and write permissions.\n",
+	"\tPlease make sure your server is running and you have\n",
+	"\tpermissions, then retry.\n");
+    exit 10;
+}
 
-$quoted = eval { $dbh->quote(0, DBI::SQL_INTEGER()) };
+#
+#   Main loop; leave this untouched, put tests after creating
+#   the new table.
+#
+while (Testing()) {
+    #
+    #   Connect to the database
+    Test($state or $dbh = DBI->connect($test_dsn, $test_user, $test_password))
+	or ServerError();
 
-ok (!$@);
+    #
+    # We use a hardcoded special table name to test for a regression of
+    # http://bugs.mysql.com/22005
+    #  
+    $table= 't1$special';
+    $state or $dbh->do("DROP TABLE IF EXISTS `$table`" );
 
-cmp_ok $quoted, 'eq', '0', "equals '0'";
+    #
+    #   Create a new table
+    #
+    Test($state or ($def = TableDefinition($table, @table_def),
+		    $dbh->do($def)))
+	   or DbiError($dbh->err, $dbh->errstr);
 
-$quoted = eval { $dbh->quote('abc', DBI::SQL_VARCHAR()) };
+    Test($state or $dbh->table_info(undef,undef,$table));
+    Test($state or $dbh->column_info(undef,undef,$table,'%'));
 
-ok (!$@);
+    #
+    # Bug #23974: "column_info does not return error when table does not exist"
+    # DBI spec specifies that empty ref should be returned, not error 
+    #
+    Test($state or
+        ($sth= $dbh->column_info(undef,undef,"this_does_not_exist",'%')));
 
-cmp_ok $quoted, 'eq', "\'abc\'", "equals 'abc'";
+    Test($sth and ! $sth->err());
 
-ok($dbh->disconnect());
+    Test($state or $sth = $dbh->prepare("SELECT * FROM $table"))
+	   or DbiError($dbh->err, $dbh->errstr);
+
+    Test($state or $sth->execute)
+	   or DbiError($sth->err, $sth->errstr);
+
+    my $res;
+    Test($state or (($res = $sth->{'NUM_OF_FIELDS'}) == @table_def))
+	   or DbiError($sth->err, $sth->errstr);
+    if (!$state && $verbose) {
+	printf("Number of fields: %s\n", defined($res) ? $res : "undef");
+    }
+
+    Test($state or ($ref = $sth->{'NAME'})  &&  @$ref == @table_def
+	            &&  (lc $$ref[0]) eq $table_def[0][0]
+		    &&  (lc $$ref[1]) eq $table_def[1][0])
+	   or DbiError($sth->err, $sth->errstr);
+    if (!$state && $verbose) {
+	print "Names:\n";
+	for ($i = 0;  $i < @$ref;  $i++) {
+	    print "    ", $$ref[$i], "\n";
+	}
+    }
+
+    Test($state or ($ref = $sth->{'NULLABLE'})  &&  @$ref == @table_def
+		    &&  !($$ref[0] xor ($table_def[0][3] & $COL_NULLABLE))
+		    &&  !($$ref[1] xor ($table_def[1][3] & $COL_NULLABLE)))
+	   or DbiError($sth->err, $sth->errstr);
+    if (!$state && $verbose) {
+	print "Nullable:\n";
+	for ($i = 0;  $i < @$ref;  $i++) {
+	    print "    ", ($$ref[$i] & $COL_NULLABLE) ? "yes" : "no", "\n";
+	}
+    }
+
+    Test($state or (($ref = $sth->{TYPE})  &&  (@$ref == @table_def)
+		    &&  ($ref->[0] eq DBI::SQL_INTEGER())
+		    &&  ($ref->[1] eq DBI::SQL_VARCHAR()  ||
+			 $ref->[1] eq DBI::SQL_CHAR())))
+	or printf("Expected types %d and %d, got %s and %s\n",
+		  &DBI::SQL_INTEGER(), &DBI::SQL_VARCHAR(),
+		  defined($ref->[0]) ? $ref->[0] : "undef",
+		  defined($ref->[1]) ? $ref->[1] : "undef");
+
+    Test($state or undef $sth  ||  1);
+
+
+    #
+    #  Drop the test table
+    #
+    Test($state or ($sth = $dbh->prepare("DROP TABLE $table")))
+	or DbiError($dbh->err, $dbh->errstr);
+    Test($state or $sth->execute)
+	or DbiError($sth->err, $sth->errstr);
+
+    #  NUM_OF_FIELDS should be zero (Non-Select)
+    Test($state or (! defined $sth->{'NUM_OF_FIELDS'} ||
+          $sth->{'NUM_OF_FIELDS'} == 0))
+	or !$verbose or printf("NUM_OF_FIELDS is %s, not zero.\n",
+			       $sth->{'NUM_OF_FIELDS'});
+    Test($state or (undef $sth) or 1);
+
+    #
+    #  Test different flavours of quote. Need to work around a bug in
+    #  DBI 1.02 ...
+    #
+    my $quoted;
+    if (!$state) {
+	$quoted = eval { $dbh->quote(0, DBI::SQL_INTEGER()) };
+    }
+    Test($state or $@  or  $quoted eq 0);
+    if (!$state) {
+	$quoted = eval { $dbh->quote('abc', DBI::SQL_VARCHAR()) };
+    }
+    Test($state or $@ or $quoted eq q{'abc'});
+}
